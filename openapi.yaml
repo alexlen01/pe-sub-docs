@@ -1,0 +1,1131 @@
+openapi: 3.0.3
+
+info:
+  title: PE Subscription Platform API
+  description: |
+    REST API for the PE Subscription Borrowing Base platform.
+    Served by `pe-sub-api` (Node.js / Express) on port 3001 in development.
+
+    **Route status legend**
+    - Routes with no tag note are **implemented** in `pe-sub-api/src/routes/`.
+    - Routes marked `[planned]` are identified through the prototype service layer
+      (`pe-sub-platform`) and have a corresponding `// TODO` comment in each
+      service function. They are the next implementation targets.
+  version: 0.1.0
+  contact:
+    name: PE Sub Platform Team
+
+servers:
+  - url: http://localhost:3001/api
+    description: Development (Vite proxy forwards /api → localhost:3001)
+
+tags:
+  - name: facilities
+    description: Facility-level records and status management
+  - name: lps
+    description: LP Master records — identity, ratings, classification, commitment data
+  - name: borrowing-base
+    description: Shadow BB calculation engine, snapshot history, and summary extensions
+  - name: reports
+    description: Portfolio-level reporting outputs (collateral, concentration, EAR)
+  - name: submissions
+    description: Agent BB document upload and submission lifecycle  [planned]
+  - name: extraction
+    description: OCR / Excel extraction results per submission  [planned]
+  - name: field-mapping
+    description: Alias-group dictionary mapping extracted headers to canonical LP fields  [planned]
+  - name: matching
+    description: LP name-matching queue and decision workflow  [planned]
+  - name: config
+    description: Read-only configuration data consumed by UI screens  [planned]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # ── Facilities ───────────────────────────────────────────────────────────────
+
+  /facilities:
+    get:
+      tags: [facilities]
+      summary: List all facilities
+      operationId: listFacilities
+      responses:
+        '200':
+          description: Array of facility records ordered by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Facility'
+
+  /facilities/{id}:
+    get:
+      tags: [facilities]
+      summary: Get a single facility
+      operationId: getFacility
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Facility record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /facilities/{id}/status:
+    patch:
+      tags: [facilities]
+      summary: Update facility status
+      operationId: updateFacilityStatus
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/FacilityStatus'
+      responses:
+        '200':
+          description: Updated facility record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── LPs ──────────────────────────────────────────────────────────────────────
+
+  /lps:
+    get:
+      tags: [lps]
+      summary: List LP records
+      operationId: listLPs
+      parameters:
+        - name: facilityId
+          in: query
+          schema:
+            type: integer
+          description: Filter by facility
+        - name: cls
+          in: query
+          schema:
+            $ref: '#/components/schemas/LPClassification'
+          description: Filter by classification tier
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Case-insensitive substring match on investor name
+      responses:
+        '200':
+          description: LP records ordered by rank
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LP'
+
+  /lps/{id}:
+    get:
+      tags: [lps]
+      summary: Get a single LP record
+      operationId: getLP
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: LP record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LP'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [lps]
+      summary: Update LP fields (classification override, reclassify, notes, etc.)
+      operationId: updateLP
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LPPatch'
+      responses:
+        '200':
+          description: Updated LP record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LP'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Borrowing Base ───────────────────────────────────────────────────────────
+
+  /bb/run/{facilityId}:
+    post:
+      tags: [borrowing-base]
+      summary: Compute Shadow BB, persist snapshot, update facility lastRunAt
+      operationId: runBB
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '201':
+          description: New snapshot record containing the full BBResult
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BBSnapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bb/snapshots/{facilityId}:
+    get:
+      tags: [borrowing-base]
+      summary: All snapshots for a facility ordered by calculatedAt ascending
+      operationId: listBBSnapshots
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '200':
+          description: Array of snapshot records (result jsonb included)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BBSnapshot'
+
+  /bb/snapshots/{facilityId}/latest:
+    get:
+      tags: [borrowing-base]
+      summary: Latest snapshot for a facility  [planned]
+      operationId: getLatestBBSnapshot
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '200':
+          description: Most recent snapshot record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BBSnapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bb/summary-ext/{facilityId}:
+    get:
+      tags: [borrowing-base]
+      summary: >
+        Extended portfolio summary for the Shadow BB screen (five-table view:
+        LP Portfolio, Borrowing Base, BUSA rates, Agent rates, LP Classification)  [planned]
+      operationId: getBBSummaryExt
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '200':
+          description: Extended summary object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BBSummaryExt'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Reports ──────────────────────────────────────────────────────────────────
+
+  /reports/collateral/{facilityId}:
+    get:
+      tags: [reports]
+      summary: Collateral Market Value & Coverage — latest snapshot summary
+      operationId: getCollateralReport
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '200':
+          description: Facility ID, calculatedAt, and BBSummary from the latest snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  facilityId:
+                    type: integer
+                  calculatedAt:
+                    type: string
+                    format: date-time
+                  summary:
+                    $ref: '#/components/schemas/BBSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /reports/concentration/{facilityId}:
+    get:
+      tags: [reports]
+      summary: Concentration Exposures — breach list from the latest snapshot
+      operationId: getConcentrationReport
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '200':
+          description: Array of concentration breaches/warnings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breaches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BBBreach'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /reports/ear/{facilityId}:
+    get:
+      tags: [reports]
+      summary: Effective Advance Rate history across all snapshots  [planned]
+      operationId: getEARReport
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '200':
+          description: Array of EAR data points ordered by calculatedAt
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    calculatedAt:
+                      type: string
+                      format: date-time
+                    ear:
+                      type: number
+                      description: UBS Effective Advance Rate (totalUBB / totalUEC)
+                    agentEar:
+                      type: number
+                    earDelta:
+                      type: number
+
+  # ── Submissions ───────────────────────────────────────────────────────────────
+
+  /submissions:
+    get:
+      tags: [submissions]
+      summary: List all submissions  [planned]
+      operationId: listSubmissions
+      parameters:
+        - name: facilityId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Array of submission records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Submission'
+    post:
+      tags: [submissions]
+      summary: Create a new submission (document upload)  [planned]
+      operationId: createSubmission
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [facilityId, agentBank, file]
+              properties:
+                facilityId:
+                  type: integer
+                agentBank:
+                  type: string
+                periodMonth:
+                  type: string
+                  description: ISO month string e.g. "2026-05"
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created submission record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+
+  /submissions/{id}:
+    get:
+      tags: [submissions]
+      summary: Get a single submission  [planned]
+      operationId: getSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Submission record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Extraction ───────────────────────────────────────────────────────────────
+
+  /submissions/{id}/extracted-lps:
+    get:
+      tags: [extraction]
+      summary: Extracted LP rows from the submitted document  [planned]
+      operationId: getExtractedLPs
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Array of extracted LP rows with confidence scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExtractedLP'
+
+  /submissions/{id}/field-map:
+    get:
+      tags: [extraction]
+      summary: Column-to-canonical-field mapping for this submission  [planned]
+      operationId: getFieldMap
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Map of extracted column name → canonical LP Master field name
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+
+  /submissions/{id}/doc-recognition:
+    get:
+      tags: [extraction]
+      summary: Document recognition metadata (bank detected, sheet names, etc.)  [planned]
+      operationId: getDocRecognition
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Document recognition result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocRecognition'
+
+  /submissions/{id}/unrecognized-columns:
+    get:
+      tags: [extraction]
+      summary: Column headers that could not be mapped to any canonical field  [planned]
+      operationId: getUnrecognizedColumns
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Array of unrecognized column header strings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  # ── Field Mapping ─────────────────────────────────────────────────────────────
+
+  /field-mapping/alias-groups:
+    get:
+      tags: [field-mapping]
+      summary: Alias-group dictionary — maps agent column headers to canonical LP fields  [planned]
+      operationId: getAliasGroups
+      responses:
+        '200':
+          description: Array of alias group objects grouped by LP Master section
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AliasGroup'
+
+  /field-mapping/canonical-fields:
+    get:
+      tags: [field-mapping]
+      summary: All canonical LP Master field names  [planned]
+      operationId: getCanonicalFields
+      responses:
+        '200':
+          description: Array of canonical field name strings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /field-mapping/blocklist:
+    get:
+      tags: [field-mapping]
+      summary: Global blocklist — column names that should never be mapped  [planned]
+      operationId: getBlocklist
+      responses:
+        '200':
+          description: Array of blocked column name strings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /field-mapping/suggestions:
+    get:
+      tags: [field-mapping]
+      summary: Pending user-submitted alias suggestions awaiting approval  [planned]
+      operationId: getSuggestions
+      responses:
+        '200':
+          description: Array of pending alias suggestions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AliasSuggestion'
+    post:
+      tags: [field-mapping]
+      summary: Submit a new alias suggestion  [planned]
+      operationId: createSuggestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AliasSuggestion'
+      responses:
+        '201':
+          description: Created suggestion
+
+  # ── Matching ─────────────────────────────────────────────────────────────────
+
+  /matching/queue:
+    get:
+      tags: [matching]
+      summary: Name-matching queue for the active submission  [planned]
+      operationId: getMatchQueue
+      parameters:
+        - name: submissionId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Array of match candidates with scores and decisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MatchQueueItem'
+
+  /matching/queue/{id}:
+    patch:
+      tags: [matching]
+      summary: Accept or reject a single match decision  [planned]
+      operationId: updateMatchDecision
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [accepted, rejected, manual]
+                masterName:
+                  type: string
+                  description: Required when decision is manual
+      responses:
+        '200':
+          description: Updated match queue item
+
+  /matching/thresholds:
+    get:
+      tags: [matching]
+      summary: Current name-matching score thresholds  [planned]
+      operationId: getMatchThresholds
+      responses:
+        '200':
+          description: Threshold configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchThresholds'
+    patch:
+      tags: [matching]
+      summary: Update name-matching score thresholds  [planned]
+      operationId: updateMatchThresholds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchThresholds'
+      responses:
+        '200':
+          description: Updated thresholds
+
+  # ── Config ────────────────────────────────────────────────────────────────────
+
+  /config/classification:
+    get:
+      tags: [config]
+      summary: LP classification options, rate maps, and qualifying criteria  [planned]
+      operationId: getClassificationConfig
+      responses:
+        '200':
+          description: Classification configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationConfig'
+
+  /config/eligibility:
+    get:
+      tags: [config]
+      summary: BUSA/Agent rate tiers, eligibility rules, and concentration limits  [planned]
+      operationId: getEligibilityConfig
+      responses:
+        '200':
+          description: Eligibility configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EligibilityConfig'
+
+  /config/wizard:
+    get:
+      tags: [config]
+      summary: Upload wizard steps, snapshot options, and calculation modes  [planned]
+      operationId: getWizardConfig
+      responses:
+        '200':
+          description: Wizard configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WizardConfig'
+
+  /config/audit:
+    get:
+      tags: [config]
+      summary: Audit trail event types, retention label, and default date range  [planned]
+      operationId: getAuditConfig
+      responses:
+        '200':
+          description: Audit configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditConfig'
+
+  /config/matching:
+    get:
+      tags: [config]
+      summary: Matching config — legal suffixes, abbreviation dictionary, default thresholds  [planned]
+      operationId: getMatchingConfig
+      responses:
+        '200':
+          description: Matching configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchingConfig'
+
+  /config/reports:
+    get:
+      tags: [config]
+      summary: Report tabs, certificate options, and scheduled report definitions  [planned]
+      operationId: getReportsConfig
+      responses:
+        '200':
+          description: Reports configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportsConfig'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+components:
+
+  # ── Parameters ───────────────────────────────────────────────────────────────
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+    FacilityIdPath:
+      name: facilityId
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  # ── Responses ────────────────────────────────────────────────────────────────
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Schemas ───────────────────────────────────────────────────────────────────
+
+  schemas:
+
+    # ── Enums ──────────────────────────────────────────────────────────────────
+
+    FacilityStatus:
+      type: string
+      enum: [Not Started, In Progress, Needs Review, Certified, Pending]
+
+    LPClassification:
+      type: string
+      enum: [Rated, Unrated >2bn, Unrated 1–2bn, Eligible, Excluded]
+
+    Region:
+      type: string
+      enum: [North America, Europe, Asia-Pacific, Middle East, Other]
+
+    InvestorType:
+      type: string
+      enum: [Institutional, HNW]
+
+    # ── Core records ───────────────────────────────────────────────────────────
+
+    Facility:
+      type: object
+      required: [id, name, agentBank, status, concLimitM, createdAt, updatedAt]
+      properties:
+        id:          { type: integer }
+        name:        { type: string }
+        agentBank:   { type: string }
+        status:      { $ref: '#/components/schemas/FacilityStatus' }
+        concLimitM:  { type: number, description: Per-LP concentration limit in $M, example: 25 }
+        lastRunAt:   { type: string, format: date-time, nullable: true }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    LP:
+      type: object
+      required: [id, facilityId, rank, name, cls, inc]
+      description: LP Master record — mirrors Step 4 (Final Shadow BB) field set from BB_PROCESS_FLOW
+      properties:
+        # Identity
+        id:            { type: integer }
+        facilityId:    { type: integer }
+        rank:          { type: integer }
+        name:          { type: string }
+        parent:        { type: string, nullable: true }
+        spv:           { type: boolean }
+        hq:            { type: boolean }
+        type:          { $ref: '#/components/schemas/InvestorType' }
+        region:        { $ref: '#/components/schemas/Region' }
+        ig:            { type: boolean, description: Investment Grade flag }
+        cls:           { $ref: '#/components/schemas/LPClassification' }
+        clsTag:        { type: string, description: CSS tag class e.g. tag-rated }
+        # Ratings
+        sp:            { type: string, default: NR }
+        mdy:           { type: string, default: NR }
+        fitch:         { type: string, default: NR }
+        # Financial scale (formatted strings e.g. "$3.8B")
+        aum:           { type: string, nullable: true }
+        nav:           { type: string, nullable: true }
+        pension:       { type: string, nullable: true }
+        pensionFunded: { type: string, nullable: true }
+        # Commitment data
+        capCommit:     { type: string, nullable: true, description: Capital commitment e.g. "$250.0M" }
+        pctCapCommit:  { type: string, nullable: true }
+        calledCap:     { type: string, nullable: true }
+        # Uncalled capital
+        uc:            { type: string, description: Uncalled capital e.g. "$28.4M" }
+        pctUncalled:   { type: string, nullable: true }
+        pctCalled:     { type: string, nullable: true }
+        # Concentration & BB
+        agentConc:     { type: string, nullable: true }
+        ubsConc:       { type: string, nullable: true }
+        agentRate:     { type: string, nullable: true }
+        abb:           { type: string, default: '$0', description: Agent-submitted borrowing base }
+        # Status flags
+        inc:           { type: boolean, description: UBS Included flag }
+        rcl:           { type: boolean, description: Reclassified flag }
+        tf:            { type: boolean, description: Transfer flag }
+        notes:         { type: string, nullable: true }
+        createdAt:     { type: string, format: date-time }
+        updatedAt:     { type: string, format: date-time }
+
+    LPPatch:
+      type: object
+      description: Partial LP update — any subset of mutable LP fields
+      properties:
+        cls:        { $ref: '#/components/schemas/LPClassification' }
+        agentRate:  { type: string }
+        agentConc:  { type: string }
+        ubsConc:    { type: string }
+        inc:        { type: boolean }
+        rcl:        { type: boolean }
+        notes:      { type: string }
+
+    # ── Borrowing Base ─────────────────────────────────────────────────────────
+
+    BBParams:
+      type: object
+      properties:
+        concLimitM: { type: number, description: Per-LP concentration limit in $M, example: 25 }
+
+    BBSummary:
+      type: object
+      description: Portfolio-level Shadow BB metrics
+      properties:
+        totalUBB:        { type: number, description: Total UBS Borrowing Base ($M) }
+        totalABB:        { type: number, description: Total Agent Borrowing Base ($M) }
+        bbDelta:         { type: number, description: UBS BB minus Agent BB ($M) }
+        ear:             { type: number, description: UBS Effective Advance Rate (totalUBB / totalUEC) }
+        agentEar:        { type: number, description: Agent Effective Advance Rate }
+        earDelta:        { type: number }
+        totalUEC:        { type: number, description: Total UBS Eligible Uncalled Capital ($M) }
+        totalUC:         { type: number, description: Total Uncalled Capital of included LPs ($M) }
+        totalConcExcess: { type: number, description: Total concentration excess above per-LP cap ($M) }
+        includedCount:   { type: integer }
+        excludedCount:   { type: integer }
+        reclassCount:    { type: integer }
+        calculatedAt:    { type: string, format: date-time }
+        params:          { $ref: '#/components/schemas/BBParams' }
+
+    ComputedLP:
+      allOf:
+        - $ref: '#/components/schemas/LP'
+        - type: object
+          description: LP record with all derived Shadow BB fields appended by the calculation engine
+          properties:
+            uec:         { type: string, description: Formatted UBS Eligible Uncalled Cap e.g. "$25.0M" }
+            uecM:        { type: number, description: UBS Eligible Uncalled Cap in $M }
+            ubbM:        { type: number, description: UBS Borrowing Base in $M }
+            abbM:        { type: number, description: Agent BB in $M }
+            deltaM:      { type: number, description: UBS BB minus Agent BB in $M }
+            concExcessM: { type: number, description: Uncalled above per-LP cap in $M }
+            busaRate:    { type: number, description: BUSA advance rate as decimal e.g. 0.90 }
+            highQuality: { type: boolean, description: Rated / Unrated >2bn / Unrated 1-2bn }
+            ubb:         { type: string, description: Formatted UBS BB e.g. "$22.5M" }
+            delta:       { type: string, description: Formatted delta e.g. "–$3.5M" }
+            rate:        { type: string, description: Formatted BUSA rate e.g. "90%" }
+
+    BBBreach:
+      type: object
+      properties:
+        rule:     { type: string, description: Breach rule name }
+        entity:   { type: string, description: LP name or group label }
+        value:    { type: string, description: Actual concentration value e.g. "51.8%" }
+        limit:    { type: string, description: Credit agreement limit e.g. "50%" }
+        severity: { type: string, enum: [breach, warning] }
+
+    BBResult:
+      type: object
+      description: Full output of computePortfolioBB — stored as jsonb in bbSnapshots.result
+      properties:
+        lps:      { type: array, items: { $ref: '#/components/schemas/ComputedLP' } }
+        summary:  { $ref: '#/components/schemas/BBSummary' }
+        breaches: { type: array, items: { $ref: '#/components/schemas/BBBreach' } }
+
+    BBSnapshot:
+      type: object
+      description: Append-only snapshot — latest per facility is the current Shadow BB
+      properties:
+        id:           { type: integer }
+        facilityId:   { type: integer }
+        calculatedBy: { type: integer, nullable: true, description: FK → users.id }
+        calculatedAt: { type: string, format: date-time }
+        result:       { $ref: '#/components/schemas/BBResult' }
+
+    RateBreakdownRow:
+      type: object
+      properties:
+        rate:    { type: string, description: Rate label e.g. "90%" }
+        count:   { type: integer }
+        dollars: { type: number, description: Total uncalled capital in dollars }
+        pct:     { type: number, description: Fraction of total uncalled e.g. 0.37 }
+
+    ClassBreakdownRow:
+      type: object
+      properties:
+        label:   { type: string, description: Classification label e.g. "Rated Investors" }
+        count:   { type: integer }
+        dollars: { type: number }
+        pct:     { type: number }
+
+    BBSummaryExt:
+      type: object
+      description: >
+        Extended portfolio summary powering the five-table Shadow BB summary panel
+        (LP Portfolio, Borrowing Base, BUSA rates, Agent rates, LP Classification).
+      properties:
+        # LP Portfolio table
+        totalCapCommit:     { type: number, description: Total capital commitments in dollars }
+        totalCalledCap:     { type: number }
+        pctCalled:          { type: number }
+        totalAllUncalled:   { type: number, description: Total uncalled across all LPs in dollars }
+        totalLPs:           { type: integer }
+        pctInstitutional:   { type: number }
+        pctHNW:             { type: number }
+        pctTop10:           { type: number, description: Top-10 LPs share of total uncalled }
+        pctTop20:           { type: number }
+        igRatio:            { type: number }
+        pctUncalledGt2M:    { type: number, description: Fraction of uncalled from LPs with >$2M uncalled }
+        # Borrowing Base table
+        facilitySize:        { type: number }
+        ubsParticipation:    { type: number }
+        ubsParticipationPct: { type: number }
+        facilityLTV:         { type: number }
+        availableCommit:     { type: number }
+        facilityAdvRate:     { type: number }
+        agentBBRaw:          { type: number, description: Agent BB in dollars }
+        ubsBBRaw:            { type: number, description: UBS BB in dollars }
+        ubsAdvRate:          { type: number }
+        # Breakdown tables
+        busaBreakdown:  { type: array, items: { $ref: '#/components/schemas/RateBreakdownRow' } }
+        agentBreakdown: { type: array, items: { $ref: '#/components/schemas/RateBreakdownRow' } }
+        clsBreakdown:   { type: array, items: { $ref: '#/components/schemas/ClassBreakdownRow' } }
+
+    # ── Submissions & Extraction ───────────────────────────────────────────────
+
+    SubmissionStatus:
+      type: string
+      enum: [Uploading, Extracting, Review Extraction, Review Matches, Run BB, Completed, Aborted]
+
+    Submission:
+      type: object
+      properties:
+        id:          { type: integer }
+        facilityId:  { type: integer }
+        agentBank:   { type: string }
+        periodMonth: { type: string, description: ISO month e.g. "2026-05" }
+        status:      { $ref: '#/components/schemas/SubmissionStatus' }
+        fileName:    { type: string }
+        uploadedBy:  { type: integer, nullable: true, description: FK → users.id }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    ExtractedLP:
+      type: object
+      description: Single LP row parsed from the uploaded agent document
+      properties:
+        id:              { type: integer }
+        submissionId:    { type: integer }
+        rawName:         { type: string, description: Agent name as it appears in the document }
+        masterName:      { type: string, nullable: true, description: Matched LP Master name }
+        confidence:      { type: number, description: Extraction confidence score 0–1 }
+        fields:          { type: object, additionalProperties: true, description: Extracted field values keyed by canonical field name }
+
+    DocRecognition:
+      type: object
+      properties:
+        agentBank:    { type: string, nullable: true }
+        sheetNames:   { type: array, items: { type: string } }
+        headerRow:    { type: integer, nullable: true }
+        totalRows:    { type: integer }
+        confidence:   { type: number }
+
+    # ── Field Mapping ──────────────────────────────────────────────────────────
+
+    AliasGroup:
+      type: object
+      properties:
+        group:  { type: string, description: LP Master section name }
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              canonical:     { type: string }
+              lpMasterField: { type: string }
+              aliases:       { type: array, items: { type: string } }
+              tier:          { type: string, enum: [Core, Bank, User] }
+
+    AliasSuggestion:
+      type: object
+      properties:
+        extractedHeader: { type: string }
+        canonicalField:  { type: string }
+        submittedBy:     { type: integer, nullable: true }
+
+    # ── Matching ───────────────────────────────────────────────────────────────
+
+    MatchQueueItem:
+      type: object
+      properties:
+        id:            { type: integer }
+        submissionId:  { type: integer }
+        agentName:     { type: string }
+        masterName:    { type: string, nullable: true }
+        score:         { type: number, description: Combined similarity score 0–100 }
+        decision:      { type: string, enum: [pending, accepted, rejected, manual], nullable: true }
+        isNew:         { type: boolean, description: True if no LP Master record exists for this LP }
+
+    MatchThresholds:
+      type: object
+      properties:
+        autoAccept:  { type: number, description: Score at or above which matches are auto-accepted, example: 90 }
+        reviewQueue: { type: number, description: Score at or above which matches enter the review queue, example: 70 }
+
+    # ── Config ─────────────────────────────────────────────────────────────────
+
+    ClassificationConfig:
+      type: object
+      properties:
+        clsOptions:    { type: array, items: { type: string } }
+        regionOptions: { type: array, items: { type: string } }
+        typeOptions:   { type: array, items: { type: string } }
+        spRatingOptions:  { type: array, items: { type: string } }
+        mdyRatingOptions: { type: array, items: { type: string } }
+        busaRateMap:   { type: object, additionalProperties: { type: string }, description: Classification → BUSA rate string e.g. "90%" }
+        agentRateMap:  { type: object, additionalProperties: { type: string } }
+        clsTagMap:     { type: object, additionalProperties: { type: string } }
+        clsCriteria:   { type: object, additionalProperties: { type: string } }
+
+    EligibilityTier:
+      type: object
+      properties:
+        cls:  { type: string }
+        rate: { type: string }
+
+    EligibilityRule:
+      type: object
+      properties:
+        id:     { type: string }
+        rule:   { type: string }
+        value:  { type: string }
+        active: { type: boolean }
+
+    EligibilityConfig:
+      type: object
+      properties:
+        busaTiers:       { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
+        agentTiers:      { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
+        agentRateParams: { type: array, items: { type: object, properties: { label: { type: string }, value: { type: string } } } }
+        eligRules:       { type: array, items: { $ref: '#/components/schemas/EligibilityRule' } }
+        concLimits:      { type: array, items: { type: object, additionalProperties: true } }
+        globalSettings:  { type: array, items: { type: object, additionalProperties: true } }
+
+    CalcMode:
+      type: object
+      properties:
+        id:          { type: string }
+        title:       { type: string }
+        desc:        { type: string }
+        recommended: { type: boolean }
+
+    WizardConfig:
+      type: object
+      properties:
+        wizardSteps:     { type: array, items: { type: string } }
+        snapshotOptions: { type: array, items: { type: string } }
+        calcModes:       { type: array, items: { $ref: '#/components/schemas/CalcMode' } }
+
+    AuditConfig:
+      type: object
+      properties:
+        eventTypes:          { type: array, items: { type: string } }
+        eventTypeVariant:    { type: object, additionalProperties: { type: string } }
+        auditRetentionLabel: { type: string, example: 7 years }
+        defaultDateFrom:     { type: string, format: date }
+        defaultDateTo:       { type: string, format: date }
+
+    MatchingConfig:
+      type: object
+      properties:
+        defaultThresholds: { $ref: '#/components/schemas/MatchThresholds' }
+        legalSuffixes:     { type: array, items: { type: string } }
+        knownAbbreviations: { type: array, items: { type: string } }
+        abbrevRegexMap:    { type: object, additionalProperties: { type: string } }
+
+    ReportsConfig:
+      type: object
+      properties:
+        reportTabs:          { type: array, items: { type: object, properties: { id: { type: string }, label: { type: string } } } }
+        bbCertOptions:       { type: object, additionalProperties: { type: array, items: { type: string } } }
+        certRows:            { type: array, items: { type: object, additionalProperties: true } }
+        classRows:           { type: array, items: { type: object, additionalProperties: true } }
+        reportHistory:       { type: array, items: { type: object, additionalProperties: true } }
+        reportSchedules:     { type: array, items: { type: object, additionalProperties: true } }
+        concentrationTests:  { type: array, items: { type: string } }
+
+    # ── Errors ─────────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:   { type: string }
+        message: { type: string }

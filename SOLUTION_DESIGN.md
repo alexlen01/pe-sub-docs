@@ -124,36 +124,89 @@ Snapshots are append-only. The latest snapshot per facility is the current Shado
 ## 5. API Routes
 
 Base path: `/api`. Served by `pe-sub-api` on port 3001.
+Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml`.
+
+**Status legend:** ✅ implemented in `pe-sub-api/src/routes/` · 🔲 planned (TODO comment in prototype service layer)
 
 ### Facilities
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/facilities` | List all facilities |
-| GET | `/api/facilities/:id` | Single facility |
-| PATCH | `/api/facilities/:id/status` | Update facility status |
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/facilities` | ✅ | List all facilities ordered by name |
+| GET | `/api/facilities/:id` | ✅ | Single facility |
+| PATCH | `/api/facilities/:id/status` | ✅ | Update facility status |
 
 ### LPs
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/lps` | List LPs — query params: `facilityId`, `cls`, `search` |
-| GET | `/api/lps/:id` | Single LP record |
-| PATCH | `/api/lps/:id` | Update LP fields (classification override, reclassify, etc.) |
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/lps` | ✅ | List LPs — query params: `facilityId`, `cls`, `search` |
+| GET | `/api/lps/:id` | ✅ | Single LP record |
+| PATCH | `/api/lps/:id` | ✅ | Update LP fields (classification override, reclassify, etc.) |
 
 ### Borrowing Base
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/bb/run/:facilityId` | Compute Shadow BB, persist snapshot, update facility `last_run_at` |
-| GET | `/api/bb/snapshots/:facilityId` | All snapshots for a facility (ordered by date) |
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| POST | `/api/bb/run/:facilityId` | ✅ | Compute Shadow BB, persist snapshot, update `last_run_at` |
+| GET | `/api/bb/snapshots/:facilityId` | ✅ | All snapshots for a facility ordered by `calculatedAt` |
+| GET | `/api/bb/snapshots/:facilityId/latest` | 🔲 | Latest snapshot only |
+| GET | `/api/bb/summary-ext/:facilityId` | 🔲 | Extended portfolio summary (five-table Shadow BB panel: LP Portfolio, Borrowing Base, BUSA rates, Agent rates, LP Classification) |
 
 ### Reports
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/reports/collateral/:facilityId` | Latest snapshot summary (Collateral & Coverage) |
-| GET | `/api/reports/concentration/:facilityId` | Latest breach list (Concentration Exposures) |
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/reports/collateral/:facilityId` | ✅ | Latest snapshot summary (Collateral & Coverage) |
+| GET | `/api/reports/concentration/:facilityId` | ✅ | Latest breach list (Concentration Exposures) |
+| GET | `/api/reports/ear/:facilityId` | 🔲 | Effective Advance Rate history across all snapshots |
+
+### Submissions
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/submissions` | 🔲 | List all submissions; filter by `facilityId` |
+| POST | `/api/submissions` | 🔲 | Create submission — multipart upload (facility, agent bank, document file) |
+| GET | `/api/submissions/:id` | 🔲 | Single submission record |
+
+### Extraction
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/submissions/:id/extracted-lps` | 🔲 | Extracted LP rows with confidence scores |
+| GET | `/api/submissions/:id/field-map` | 🔲 | Column → canonical field mapping for this submission |
+| GET | `/api/submissions/:id/doc-recognition` | 🔲 | Document recognition metadata (agent bank detected, sheet names, etc.) |
+| GET | `/api/submissions/:id/unrecognized-columns` | 🔲 | Column headers that could not be mapped |
+
+### Field Mapping
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/field-mapping/alias-groups` | 🔲 | Alias-group dictionary (Core / Bank / User tiers) |
+| GET | `/api/field-mapping/canonical-fields` | 🔲 | All canonical LP Master field names |
+| GET | `/api/field-mapping/blocklist` | 🔲 | Column names that must never be mapped |
+| GET | `/api/field-mapping/suggestions` | 🔲 | Pending user-submitted alias suggestions |
+| POST | `/api/field-mapping/suggestions` | 🔲 | Submit a new alias suggestion |
+
+### Matching
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/matching/queue` | 🔲 | Name-matching queue for a submission (`?submissionId=`) |
+| PATCH | `/api/matching/queue/:id` | 🔲 | Accept / reject / manual-override a single match decision |
+| GET | `/api/matching/thresholds` | 🔲 | Current auto-accept and review-queue score thresholds |
+| PATCH | `/api/matching/thresholds` | 🔲 | Update thresholds |
+
+### Configuration (read-only, replaces static config files)
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/config/classification` | 🔲 | LP classification options, rate maps, criteria |
+| GET | `/api/config/eligibility` | 🔲 | BUSA/Agent rate tiers, eligibility rules, concentration limits |
+| GET | `/api/config/wizard` | 🔲 | Upload wizard steps, snapshot options, calculation modes |
+| GET | `/api/config/audit` | 🔲 | Audit trail event types, retention label, default date range |
+| GET | `/api/config/matching` | 🔲 | Matching thresholds, legal suffixes, abbreviation dictionary |
+| GET | `/api/config/reports` | 🔲 | Report tabs, certificate options, scheduled report definitions |
 
 ---
 
