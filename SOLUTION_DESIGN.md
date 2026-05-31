@@ -122,6 +122,38 @@ Note: `rate` (BUSA advance rate) and computed fields (`ubb`, `delta`, `uec`) are
 
 Snapshots are append-only. The latest snapshot per facility is the current Shadow BB. Historical snapshots support trend reporting and the audit trail.
 
+### `submissions`
+
+Added by Flyway migration `V3__submissions.sql`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial PK | |
+| facility_id | integer FK → facilities | Not null |
+| agent_bank | varchar(255) | Not null |
+| period_month | varchar(20) | Date string passed from the UI e.g. "2026-05-31" |
+| status | varchar(50) | Default `Processing`; transitions to `Review` after extraction |
+| file_name | varchar(255) | Original filename as uploaded |
+| file_path | varchar(512) nullable | Absolute server path to the saved file; configured via `${app.uploads.path}` |
+| uploaded_by | integer FK → users nullable | |
+| created_at / updated_at | timestamp | |
+
+### `config`
+
+Platform configuration — advance rates, eligibility rules, concentration limits, and global settings. Seeded by `V2__config.sql`; read-only at runtime.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| key | varchar(100) PK | e.g. `busa_tiers`, `elig_rules`, `conc_limits`, `global_settings` |
+| value | jsonb | JSON array or object; shape varies by key |
+| updated_at | timestamp | Set on upsert |
+
+**Seeded rows (6):** `busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`.
+
+**Runtime access:** `ConfigService.load()` (`@PostConstruct`) reads all rows into a `ConcurrentHashMap<String, JsonNode>` on every API startup. All reads hit the cache; no per-request DB queries. JSONB ↔ `JsonNode` conversion handled by `JsonNodeConverter` (same `PGobject` pattern as `BbResultConverter`).
+
+**Drizzle schema gap:** the `config` table is not yet defined in `pe-sub-db/src/schema.ts`. It exists only in the Flyway migration. To close: add a `config` pgTable definition to `pe-sub-db/src/schema.ts`.
+
 ---
 
 ## 5. API Routes
@@ -153,8 +185,8 @@ Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml`.
 |--------|------|--------|-------------|
 | POST | `/api/bb/run/:facilityId` | ✅ | Compute Shadow BB (Java engine), persist snapshot, update `last_run_at` |
 | GET | `/api/bb/snapshots/:facilityId` | ✅ | All snapshots for a facility ordered by `calculatedAt` |
-| GET | `/api/bb/snapshots/:facilityId/latest` | ✅ | Latest snapshot only |
-| GET | `/api/bb/summary-ext/:facilityId` | 🔲 | Extended portfolio summary (five-table Shadow BB panel) |
+| GET | `/api/bb/snapshots/:facilityId/latest` | ✅ | Latest snapshot; **204 No Content** when no snapshot exists (not 404) |
+| GET | `/api/bb/summary-ext/:facilityId` | ✅ | Extended portfolio summary — LP totals, IG ratio, top-10/20 concentration, classification breakdown, and latest snapshot BB figures |
 
 ### Reports
 
@@ -168,9 +200,9 @@ Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml`.
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
-| GET | `/api/submissions` | 🔲 | List all submissions; filter by `facilityId` |
-| POST | `/api/submissions` | 🔲 | Create submission — multipart upload (facility, agent bank, document file) |
-| GET | `/api/submissions/:id` | 🔲 | Single submission record |
+| GET | `/api/submissions` | ✅ | List all submissions; filter by `?facilityId=`; ordered newest first |
+| POST | `/api/submissions` | ✅ | Create submission — multipart: `facilityId`, `agentBank`, `periodMonth`, `file`; saves file to `${app.uploads.path}`, returns 201 + Submission JSON |
+| GET | `/api/submissions/:id` | ✅ | Single submission record or 404 |
 
 ### Extraction
 
@@ -202,7 +234,17 @@ Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml`.
 
 ### Configuration
 
-Configuration (advance rates, eligibility rules, concentration limits) is defined in TypeScript source files in `pe-sub-ui/src/config/` and requires a deployment to change. **No `/api/config/*` endpoints are needed.** The Configuration screen is read-only.
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/config/eligibility` | ✅ | Returns all 6 seeded keys (`BUSA_TIERS`, `AGENT_TIERS`, `AGENT_RATE_PARAMS`, `ELIG_RULES`, `CONC_LIMITS`, `GLOBAL_SETTINGS`) assembled from the in-memory cache |
+| GET | `/api/config/wizard` | 🔲 | No `wizard_config` row seeded yet — returns 404; UI falls back to `pe-sub-ui/src/config/wizardConfig.ts` |
+| GET | `/api/config/audit` | 🔲 | No `audit_config` row seeded yet — returns 404; UI falls back to `pe-sub-ui/src/config/auditConfig.ts` |
+| GET | `/api/config/matching` | 🔲 | No `matching_config` row seeded yet — returns 404; UI falls back to `pe-sub-ui/src/config/matchingConfig.ts` |
+| GET | `/api/config/reports` | 🔲 | No `report_config` row seeded yet — returns 404; UI falls back to `pe-sub-ui/src/config/reportConfig.ts` |
+
+All endpoints are served from the `ConcurrentHashMap` cache loaded at startup — no per-request DB reads. The UI `configService.ts` wraps every call in `try/catch`; a 404 or network error falls back to the local TypeScript constants transparently.
+
+**UI-side caching (`configService.ts`):** `getEligibilityConfig()` stores the in-flight promise in a module-level variable (`_eligCache`). The first call fires the fetch; all subsequent calls — including re-navigating to the Configuration screen — return the same promise with no additional network request. If the API is unreachable the `.catch()` resolves to the local TypeScript fallback, and that resolved value is what gets cached for the session. Other config functions (`getAuditConfig`, `getWizardConfig`, `getReportConfig`) are called infrequently enough that no session cache is needed.
 
 ---
 
@@ -245,7 +287,7 @@ One system-managed job: runs on the 1st of each month at 00:00, resets all activ
 | 9 | Prototype (`pe-sub-platform`) retained as-is | Continues as the requirements reference; changes to the prototype inform production implementation, not the other way around |
 | 10 | Terraform target: Azure | Cloud provider confirmed; `pe-sub-infra` to be scaffolded when Azure architecture is designed |
 | 11 | `pe-sub-common` dissolved into `pe-sub-ui/src/types/` | The original rationale for a shared TypeScript package was to share types and the BB engine between the Node.js API and the UI. Once the API moved to Spring Boot (Java), the shared-TypeScript premise broke. Only two files in `pe-sub-ui` imported from `pe-sub-common`, both type-only imports. The package was merged into `pe-sub-ui/src/types/` and the repo deleted |
-| 12 | Configuration is TypeScript-only | Advance rates, eligibility rules, and concentration limits change rarely and always intentionally. Keeping them in source code means changes go through code review and git history is the audit trail. The Configuration screen is read-only |
+| 12 | Configuration persisted to database; TypeScript files are fallbacks | Advance rates, eligibility rules, and concentration limits are seeded via `V2__config.sql` and served from a startup-loaded cache (`ConfigService`). The TypeScript constants in `pe-sub-ui/src/config/` remain as offline fallbacks — `configService.ts` catches API errors and returns them transparently. This lets config change via DB upsert without a deployment, while keeping the UI functional if the API is unreachable |
 | 13 | `lei` field on LP records | LP identity field for LEI or internal counterparty ID. Decision pending (week of 2026-06-02): whether to use LEI or internal UBS counterparty ID as the canonical identifier for REST-based classification auto-population |
 
 ---

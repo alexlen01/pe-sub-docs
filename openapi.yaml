@@ -4,14 +4,13 @@ info:
   title: PE Subscription Platform API
   description: |
     REST API for the PE Subscription Borrowing Base platform.
-    Served by `pe-sub-api` (Node.js / Express) on port 3001 in development.
+    Served by `pe-sub-api` (Spring Boot 3.3 / Java 21) on port 3001 in development.
 
     **Route status legend**
-    - Routes with no tag note are **implemented** in `pe-sub-api/src/routes/`.
-    - Routes marked `[planned]` are identified through the prototype service layer
-      (`pe-sub-platform`) and have a corresponding `// TODO` comment in each
-      service function. They are the next implementation targets.
-  version: 0.1.0
+    - Routes with no tag note are **implemented** in `pe-sub-api`.
+    - Routes marked `[planned]` are not yet implemented; the UI falls back to
+      static mock data when they return non-2xx.
+  version: 0.2.0
   contact:
     name: PE Sub Platform Team
 
@@ -29,7 +28,7 @@ tags:
   - name: reports
     description: Portfolio-level reporting outputs (collateral, concentration, EAR)
   - name: submissions
-    description: Agent BB document upload and submission lifecycle  [planned]
+    description: Agent BB document upload and submission lifecycle
   - name: extraction
     description: OCR / Excel extraction results per submission  [planned]
   - name: field-mapping
@@ -234,7 +233,7 @@ paths:
   /bb/snapshots/{facilityId}/latest:
     get:
       tags: [borrowing-base]
-      summary: Latest snapshot for a facility  [planned]
+      summary: Latest snapshot for a facility
       operationId: getLatestBBSnapshot
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
@@ -245,27 +244,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BBSnapshot'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '204':
+          description: No snapshot exists yet for this facility
 
   /bb/summary-ext/{facilityId}:
     get:
       tags: [borrowing-base]
       summary: >
         Extended portfolio summary for the Shadow BB screen (five-table view:
-        LP Portfolio, Borrowing Base, BUSA rates, Agent rates, LP Classification)  [planned]
+        LP Portfolio, Borrowing Base, BUSA rates, Agent rates, LP Classification)
       operationId: getBBSummaryExt
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
       responses:
         '200':
-          description: Extended summary object
+          description: >
+            Extended summary object. Computed from the lps table for the given facility
+            and merged with latest snapshot BB totals. Returns zero-valued object (not 404)
+            when the facility has no LP records.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BBSummaryExt'
-        '404':
-          $ref: '#/components/responses/NotFound'
 
   # ── Reports ──────────────────────────────────────────────────────────────────
 
@@ -349,16 +349,17 @@ paths:
   /submissions:
     get:
       tags: [submissions]
-      summary: List all submissions  [planned]
+      summary: List all submissions
       operationId: listSubmissions
       parameters:
         - name: facilityId
           in: query
           schema:
             type: integer
+          description: Filter by facility; omit for all submissions
       responses:
         '200':
-          description: Array of submission records
+          description: Array of submission records ordered newest first
           content:
             application/json:
               schema:
@@ -367,7 +368,7 @@ paths:
                   $ref: '#/components/schemas/Submission'
     post:
       tags: [submissions]
-      summary: Create a new submission (document upload)  [planned]
+      summary: Create a new submission (document upload)
       operationId: createSubmission
       requestBody:
         required: true
@@ -375,7 +376,7 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [facilityId, agentBank, file]
+              required: [facilityId, agentBank, periodMonth, file]
               properties:
                 facilityId:
                   type: integer
@@ -383,10 +384,11 @@ paths:
                   type: string
                 periodMonth:
                   type: string
-                  description: ISO month string e.g. "2026-05"
+                  description: Date string passed from the UI e.g. "2026-05-31"
                 file:
                   type: string
                   format: binary
+                  description: Agent BB Excel file; max 50 MB
       responses:
         '201':
           description: Created submission record
@@ -394,11 +396,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Submission'
+        '400':
+          description: facilityId does not exist
 
   /submissions/{id}:
     get:
       tags: [submissions]
-      summary: Get a single submission  [planned]
+      summary: Get a single submission
       operationId: getSubmission
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -963,7 +967,12 @@ components:
 
     SubmissionStatus:
       type: string
-      enum: [Uploading, Extracting, Review Extraction, Review Matches, Run BB, Completed, Aborted]
+      enum: [Processing, Review, Processed, Aborted]
+      description: >
+        Processing — extraction and matching running;
+        Review — awaiting credit officer action;
+        Processed — Shadow BB complete;
+        Aborted — cancelled by user
 
     Submission:
       type: object
@@ -971,9 +980,10 @@ components:
         id:          { type: integer }
         facilityId:  { type: integer }
         agentBank:   { type: string }
-        periodMonth: { type: string, description: ISO month e.g. "2026-05" }
+        periodMonth: { type: string, description: Date string from the UI e.g. "2026-05-31" }
         status:      { $ref: '#/components/schemas/SubmissionStatus' }
-        fileName:    { type: string }
+        fileName:    { type: string, description: Original filename as uploaded }
+        filePath:    { type: string, nullable: true, description: Absolute server path to the saved file }
         uploadedBy:  { type: integer, nullable: true, description: FK → users.id }
         createdAt:   { type: string, format: date-time }
         updatedAt:   { type: string, format: date-time }
