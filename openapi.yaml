@@ -10,7 +10,7 @@ info:
     - Routes with no tag note are **implemented** in `pe-sub-api`.
     - Routes marked `[planned]` are not yet implemented; the UI falls back to
       static mock data when they return non-2xx.
-  version: 0.2.0
+  version: 0.4.0
   contact:
     name: PE Sub Platform Team
 
@@ -32,9 +32,11 @@ tags:
   - name: extraction
     description: OCR / Excel extraction results per submission  [planned]
   - name: field-mapping
-    description: Alias-group dictionary mapping extracted headers to canonical LP fields  [planned]
+    description: Alias-group dictionary mapping extracted headers to canonical LP fields
   - name: matching
     description: LP name-matching queue and decision workflow  [planned]
+  - name: audit
+    description: Audit trail — append-only event log written by BbController, LpController, SubmissionController, and the login hook
   - name: config
     description: Read-only configuration data consumed by UI screens  [planned]
 
@@ -416,6 +418,36 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # ── Audit ────────────────────────────────────────────────────────────────────
+
+  /audit:
+    get:
+      tags: [audit]
+      summary: List all audit log entries ordered newest first
+      operationId: listAuditLog
+      responses:
+        '200':
+          description: Array of audit rows; facility name is denormalized for display
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditRow'
+
+  /audit/login:
+    post:
+      tags: [audit]
+      summary: Record a Login event for the current session
+      description: >
+        Called by the UI on app mount. Writes a Login entry with the real
+        client IP (from `X-Forwarded-For` or `remoteAddr`). User name is
+        hardcoded to `J. Smith` pending authentication integration.
+      operationId: recordLogin
+      responses:
+        '200':
+          description: Login event recorded
+
   # ── Extraction ───────────────────────────────────────────────────────────────
 
   /submissions/{id}/extracted-lps:
@@ -489,7 +521,7 @@ paths:
   /field-mapping/alias-groups:
     get:
       tags: [field-mapping]
-      summary: Alias-group dictionary — maps agent column headers to canonical LP fields  [planned]
+      summary: Alias-group dictionary — maps agent column headers to canonical LP fields
       operationId: getAliasGroups
       responses:
         '200':
@@ -504,37 +536,40 @@ paths:
   /field-mapping/canonical-fields:
     get:
       tags: [field-mapping]
-      summary: All canonical LP Master field names  [planned]
+      summary: All canonical LP Master field names as value/label pairs
       operationId: getCanonicalFields
       responses:
         '200':
-          description: Array of canonical field name strings
+          description: Array of canonical field objects
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  type: string
+                  type: object
+                  properties:
+                    value: { type: string, description: Canonical field name }
+                    label: { type: string, description: Group-prefixed label e.g. "Identity & Classification › Investor Name" }
 
   /field-mapping/blocklist:
     get:
       tags: [field-mapping]
-      summary: Global blocklist — column names that should never be mapped  [planned]
+      summary: Global blocklist — qualifier terms that must never be mapped
       operationId: getBlocklist
       responses:
         '200':
-          description: Array of blocked column name strings
+          description: Array of blocklist entries
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  type: string
+                  $ref: '#/components/schemas/BlocklistEntry'
 
   /field-mapping/suggestions:
     get:
       tags: [field-mapping]
-      summary: Pending user-submitted alias suggestions awaiting approval  [planned]
+      summary: Pending alias suggestions submitted by users or the AI engine
       operationId: getSuggestions
       responses:
         '200':
@@ -544,20 +579,91 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/AliasSuggestion'
+                  $ref: '#/components/schemas/FmSuggestion'
     post:
       tags: [field-mapping]
-      summary: Submit a new alias suggestion  [planned]
+      summary: Submit a new alias suggestion
       operationId: createSuggestion
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AliasSuggestion'
+              type: object
+              required: [extractedHeader, canonicalField]
+              properties:
+                extractedHeader: { type: string }
+                canonicalField:  { type: string }
+                suggestedBy:     { type: string, nullable: true }
       responses:
         '201':
           description: Created suggestion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FmSuggestion'
+
+  /field-mapping/aliases:
+    post:
+      tags: [field-mapping]
+      summary: Add a new alias to a canonical field
+      operationId: createAlias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [canonicalFieldId, text]
+              properties:
+                canonicalFieldId: { type: integer }
+                text: { type: string }
+                tier: { type: string, enum: [Core, Bank, User], default: Bank }
+                bank: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Created alias; audit event written
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasEntry'
+
+  /field-mapping/aliases/{id}:
+    delete:
+      tags: [field-mapping]
+      summary: Remove an alias
+      operationId: deleteAlias
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Alias deleted; audit event written
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [field-mapping]
+      summary: Update alias text and/or bank
+      operationId: updateAlias
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+                bank: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Updated alias; audit event written
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ── Matching ─────────────────────────────────────────────────────────────────
 
@@ -977,16 +1083,17 @@ components:
     Submission:
       type: object
       properties:
-        id:          { type: integer }
-        facilityId:  { type: integer }
-        agentBank:   { type: string }
-        periodMonth: { type: string, description: Date string from the UI e.g. "2026-05-31" }
-        status:      { $ref: '#/components/schemas/SubmissionStatus' }
-        fileName:    { type: string, description: Original filename as uploaded }
-        filePath:    { type: string, nullable: true, description: Absolute server path to the saved file }
-        uploadedBy:  { type: integer, nullable: true, description: FK → users.id }
-        createdAt:   { type: string, format: date-time }
-        updatedAt:   { type: string, format: date-time }
+        id:           { type: integer }
+        facilityId:   { type: integer }
+        facilityName: { type: string, description: Facility name resolved from facilityId — included in GET /submissions list response }
+        agentBank:    { type: string }
+        periodMonth:  { type: string, description: Date string from the UI e.g. "2026-05-31" }
+        status:       { $ref: '#/components/schemas/SubmissionStatus' }
+        fileName:     { type: string, description: Original filename as uploaded }
+        filePath:     { type: string, nullable: true, description: Absolute server path to the saved file }
+        uploadedBy:   { type: integer, nullable: true, description: FK → users.id }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: string, format: date-time }
 
     ExtractedLP:
       type: object
@@ -1010,26 +1117,49 @@ components:
 
     # ── Field Mapping ──────────────────────────────────────────────────────────
 
+    AliasEntry:
+      type: object
+      properties:
+        id:   { type: integer }
+        text: { type: string, description: Alias text as it appears in agent documents }
+        tier: { type: string, enum: [Core, Bank, User] }
+        bank: { type: string, nullable: true, description: Agent bank name for Bank-tier aliases }
+
     AliasGroup:
       type: object
       properties:
-        group:  { type: string, description: LP Master section name }
+        group:  { type: string, description: LP Master section name e.g. "Identity & Classification" }
         fields:
           type: array
           items:
             type: object
             properties:
-              canonical:     { type: string }
-              lpMasterField: { type: string }
-              aliases:       { type: array, items: { type: string } }
-              tier:          { type: string, enum: [Core, Bank, User] }
+              id:             { type: integer, description: Canonical field DB id — used when adding new aliases }
+              canonical:      { type: string }
+              lpMasterField:  { type: string }
+              disambiguation: { type: string, nullable: true, description: Extraction hint shown in the UI }
+              aliases:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AliasEntry'
 
-    AliasSuggestion:
+    BlocklistEntry:
       type: object
       properties:
+        id:        { type: integer }
+        qualifier: { type: string, description: Keyword matched against column headers e.g. "Adjusted" }
+        reason:    { type: string, description: Human-readable explanation }
+
+    FmSuggestion:
+      type: object
+      properties:
+        id:              { type: integer }
         extractedHeader: { type: string }
         canonicalField:  { type: string }
-        submittedBy:     { type: integer, nullable: true }
+        suggestedBy:     { type: string, nullable: true }
+        source:          { type: string, enum: [User, AI] }
+        confidence:      { type: integer, nullable: true, description: AI confidence 0–100; null for user suggestions }
+        createdAt:       { type: string, format: date-time }
 
     # ── Matching ───────────────────────────────────────────────────────────────
 
@@ -1131,6 +1261,50 @@ components:
         reportHistory:       { type: array, items: { type: object, additionalProperties: true } }
         reportSchedules:     { type: array, items: { type: object, additionalProperties: true } }
         concentrationTests:  { type: array, items: { type: string } }
+
+    # ── Audit ──────────────────────────────────────────────────────────────────
+
+    AuditEvent:
+      type: string
+      enum: [BB Recalculated, LP Reclassified, Upload, Export, Config Change, Login, Field Mapping Change]
+      description: Controlled vocabulary of audit event types
+
+    AuditRow:
+      type: object
+      description: >
+        Single row returned by GET /audit. Fields are denormalized for UI
+        rendering — facility name is resolved from facility_id, user comes
+        from user_name stored at write time.
+      required: [ts, event, detail, facility, user, ip]
+      properties:
+        ts:
+          type: string
+          format: date-time
+          description: Event timestamp (yyyy-MM-dd'T'HH:mm:ss)
+          example: '2026-05-31T14:15:00'
+        event:
+          $ref: '#/components/schemas/AuditEvent'
+        detail:
+          type: string
+          description: >
+            Human-readable event detail. Format varies by event type:
+            BB Recalculated — "N LPs · UBS BB $X.XM";
+            LP Reclassified — "LP Name → NewCls (was OldCls)";
+            Upload — "periodMonth · fileName · agentBank";
+            Login — "User login"
+          example: '1,492 LPs · UBS BB $183.9M'
+        facility:
+          type: string
+          description: Denormalized facility name; "—" when event is not facility-scoped
+          example: 'KKR North America Fund XIV'
+        user:
+          type: string
+          description: Display name of the actor; empty string until auth is integrated
+          example: 'J. Smith'
+        ip:
+          type: string
+          description: Client IP — from X-Forwarded-For header if present, else remoteAddr
+          example: '10.0.1.44'
 
     # ── Errors ─────────────────────────────────────────────────────────────────
 

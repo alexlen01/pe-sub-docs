@@ -16,5 +16,4 @@ Architecture documentation and API specification for the PE Sub Borrowing Base P
 |---|---|
 | [pe-sub-ui](https://github.com/alexlen01/pe-sub-ui) | React / TypeScript frontend |
 | [pe-sub-api](https://github.com/alexlen01/pe-sub-api) | Spring Boot / Java 21 REST API |
-| [pe-sub-db](https://github.com/alexlen01/pe-sub-db) | Database schema and migrations |
 | [pe-sub-platform](https://github.com/alexlen01/pe-sub-platform) | Working prototype (requirements reference) |
