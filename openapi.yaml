@@ -4,13 +4,21 @@ info:
   title: PE Subscription Platform API
   description: |
     REST API for the PE Subscription Borrowing Base platform.
-    Served by `pe-sub-api` (Spring Boot 3.3 / Java 21) on port 3001 in development.
+
+    **Services**
+    | Service | Port | Role |
+    |---|---|---|
+    | `pe-sub-api` | 3001 | Core REST API — LPs, facilities, BB calculation, submissions, audit |
+    | `pe-sub-extraction` | 3002 | Document extraction — parses XLSX/CSV agent schedules, posts to `/lps/ingest` |
+    | `pe-sub-jobs` | 3003 | Background jobs — scheduled recalculations and async processing |
+
+    This spec covers `pe-sub-api` (Spring Boot 3.5 / Java 21).
 
     **Route status legend**
     - Routes with no tag note are **implemented** in `pe-sub-api`.
     - Routes marked `[planned]` are not yet implemented; the UI falls back to
       static mock data when they return non-2xx.
-  version: 0.4.0
+  version: 0.5.0
   contact:
     name: PE Sub Platform Team
 
@@ -30,7 +38,10 @@ tags:
   - name: submissions
     description: Agent BB document upload and submission lifecycle
   - name: extraction
-    description: OCR / Excel extraction results per submission  [planned]
+    description: >
+      Document extraction results served by `pe-sub-extraction` (port 3002) and
+      ingested into `pe-sub-api` via `POST /lps/ingest`. Submission-level read
+      endpoints are [planned] pending persistence of extraction results.
   - name: field-mapping
     description: Alias-group dictionary mapping extracted headers to canonical LP fields
   - name: matching
@@ -195,6 +206,60 @@ paths:
                 $ref: '#/components/schemas/LP'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /lps/ingest:
+    post:
+      tags: [lps, extraction]
+      summary: Ingest extracted LP records from pe-sub-extraction
+      description: >
+        Called by `pe-sub-extraction` after parsing an agent schedule file.
+        For each extracted LP row the service runs fuzzy name matching against
+        the facility's existing LP records (Jaro-Winkler + Levenshtein, configurable
+        thresholds) and either updates the LP's financial fields or places the row
+        in the review queue.
+
+        **Action values**
+        - `Updated` — match score ≥ auto-accept threshold AND all extraction fields
+          meet the 70% confidence minimum; LP `aum`, `capCommit`, `uc`,
+          `agentRate`, and `agentConc` are written.
+        - `Queued` — match score is between review-queue and auto-accept thresholds,
+          OR the extraction flagged low-confidence fields; no LP data written.
+        - `Skipped` — match score below review-queue threshold, or no investor name
+          was extracted.
+
+        Writes an `LP Data Updated` audit event when at least one LP is updated.
+      operationId: ingestExtractedLPs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+            example:
+              facilityId: 42
+              extraction:
+                template:
+                  format: CITIBANK
+                  version: null
+                  headerRowIndex: 2
+                totalFlagged: 1
+                records:
+                  - rowIndex: 3
+                    investorName:       { value: "Blackstone Capital Partners", confidence: 1.0,  sourceHeader: "Investor Name" }
+                    commitment:         { value: 50000000,                       confidence: 0.85, sourceHeader: "Total Commitment" }
+                    uncalled:           { value: 30000000,                       confidence: 0.85, sourceHeader: "Unfunded Commitment" }
+                    aum:                { value: 120000000000,                   confidence: 1.0,  sourceHeader: "AUM" }
+                    agentRate:          { value: 0.65,                           confidence: 1.0,  sourceHeader: "Advance Rate" }
+                    concentrationLimit: { value: 0.10,                           confidence: 0.85, sourceHeader: "Conc. Limit" }
+                    requiresReview: false
+                    warnings: []
+      responses:
+        '200':
+          description: Ingest summary — one result per extracted row
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
 
   # ── Borrowing Base ───────────────────────────────────────────────────────────
 
@@ -1305,6 +1370,111 @@ components:
           type: string
           description: Client IP — from X-Forwarded-For header if present, else remoteAddr
           example: '10.0.1.44'
+
+    # ── Extraction Ingest ──────────────────────────────────────────────────────
+
+    StringFieldValue:
+      type: object
+      description: A string field extracted from the spreadsheet with a confidence score
+      properties:
+        value:        { type: string, nullable: true }
+        confidence:   { type: number, minimum: 0, maximum: 1, description: Header-match confidence 0–1 }
+        sourceHeader: { type: string, nullable: true, description: Original column header text }
+
+    DecimalFieldValue:
+      type: object
+      description: A numeric field extracted from the spreadsheet with a confidence score
+      properties:
+        value:        { type: number, nullable: true, description: Parsed numeric value (rates stored as decimals e.g. 0.65 for 65%) }
+        confidence:   { type: number, minimum: 0, maximum: 1 }
+        sourceHeader: { type: string, nullable: true }
+
+    ExtractionWarningEntry:
+      type: object
+      properties:
+        field:    { type: string, description: Canonical field name e.g. "commitment" }
+        message:  { type: string, description: Warning description }
+        rowIndex: { type: integer }
+
+    ExtractedLpRow:
+      type: object
+      description: Single LP row as extracted by pe-sub-extraction
+      properties:
+        rowIndex:           { type: integer, description: Zero-based row index in the source spreadsheet }
+        investorName:       { $ref: '#/components/schemas/StringFieldValue' }
+        commitment:         { $ref: '#/components/schemas/DecimalFieldValue' }
+        uncalled:           { $ref: '#/components/schemas/DecimalFieldValue' }
+        aum:                { $ref: '#/components/schemas/DecimalFieldValue' }
+        agentRate:          { $ref: '#/components/schemas/DecimalFieldValue' }
+        concentrationLimit: { $ref: '#/components/schemas/DecimalFieldValue' }
+        requiresReview:
+          type: boolean
+          description: True when any field has confidence < 0.7 or a missing value
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractionWarningEntry'
+
+    IngestRequest:
+      type: object
+      required: [facilityId, extraction]
+      properties:
+        facilityId: { type: integer }
+        extraction:
+          type: object
+          required: [records]
+          properties:
+            template:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [CITIBANK, JPM, GOLDMAN_SACHS, BARCLAYS, INTERNAL, UNKNOWN]
+                version:        { type: string, nullable: true }
+                headerRowIndex: { type: integer }
+            records:
+              type: array
+              items:
+                $ref: '#/components/schemas/ExtractedLpRow'
+            totalFlagged: { type: integer }
+
+    IngestRecordResult:
+      type: object
+      properties:
+        rowIndex:      { type: integer }
+        extractedName: { type: string, nullable: true }
+        matchedLpId:   { type: integer, nullable: true }
+        matchedLpName: { type: string, nullable: true }
+        matchScore:    { type: integer, nullable: true, description: Combined similarity score 0–100 }
+        action:
+          type: string
+          enum: [Updated, Queued, Skipped]
+          description: >
+            Updated — LP fields written;
+            Queued — needs credit officer review;
+            Skipped — no match or no investor name
+        updatedFields:
+          type: array
+          items: { type: string }
+          description: LP field names written (e.g. ["aum", "capCommit", "uc"])
+        warnings:
+          type: array
+          items: { type: string }
+          description: Reasons for Queued or Skipped actions
+
+    IngestResult:
+      type: object
+      properties:
+        facilityId:     { type: integer }
+        processedAt:    { type: string, format: date-time }
+        templateFormat: { type: string }
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/IngestRecordResult'
+        updated: { type: integer, description: Number of LP records successfully updated }
+        queued:  { type: integer, description: Number of rows placed in the review queue }
+        skipped: { type: integer, description: Number of rows that could not be matched }
 
     # ── Errors ─────────────────────────────────────────────────────────────────
 
