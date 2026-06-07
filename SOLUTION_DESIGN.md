@@ -508,3 +508,118 @@ One system-managed job planned: runs on the 1st of each month, resets all active
 ---
 
 > **Note on `PE-Sub-Platform-Solution-Design.docx`:** The Word document is a point-in-time export and is no longer maintained in sync automatically. `SOLUTION_DESIGN.md` is the canonical reference.
+
+
+### Multiple Agent BB templates
+
+Template #1: Blue Owl GP Stakes V BB by Goldman Sachs Bank USA
+
+Two summary tables:
+
+Tranche A
+
+Borrowing Base
+Eligible Remaining Commitments
+Total Remaining Commitments
+Effective Advance Rate
+
+Tranche B
+
+Tranche B Excluded LPs
+Total Eligible Remaining Commitments
+Tranche B Advance Rate
+Tranche A Maximum Commitments
+Tranche B Borrowing Base
+
+
+Followed by columns in Excel
+
+Grouped by (separate row)
+
+Rated Investors
+Unrated Investors
+Eligible Investors
+Excluded Investors
+
+Investor
+Parent / Sponsor / Manager
+S&P 
+Moody's
+Net Assets(range)
+Individual Original Commitment 
+Original Commitment 
+Individual Unfunded Commitment 
+Unfunded Capital Commitment 
+% Called
+% Total Unfunded Commitment
+% Eligible Unfunded Commitment
+Concentration Limit
+Excess Concentration
+Eligible Commitment
+Advance Rate
+Borrowing Base Contribution
+% of Borrowing Base
+S&P (numerical ratings scale, 0-9)
+Moody's (numerical ratings scale, 0-9)
+Applicable Rating (numerical ratings scale, 0-9)
+
+Subtotal
+Total 
+
+Pink rows highlighted for Reclassified
+Blue rows highlighted for Transferee
+
+
+
+Template #2 -- Proforma AF BB by Silicon Valley Bank
+
+Arctos American Footbal Fund (all entities) - Investor List
+Reporting Date
+
+Columns in Excel (shifted)
+
+Investor Name
+Committed Capital
+Called Capital
+Recallable Distributions
+Excess Concentration
+Remaining Callable Capital
+Remaining Callable Capital Adjusted for Concentration Limit
+
+Total included investors
+
+Excluded Investors
+
+None listed in a sample from 2/21/2025
+
+
+
+Template #3 -- Petershill IV BB by Wells Fargo
+
+Summary table:
+Borrowing Base
+Eligible Remaining Commitments
+Total Remaining Commitments
+Total Original Commitments
+Effective Advance Rate
+
+Unnamed column with identifier
+Investor
+Investor Category
+S & P's Rating
+Moody's Rating
+Net Assets (range)
+Individual Original Commitment
+Original Commitment
+Individual Unfunded Commitment
+Unfunded Capital Commitment
+% Called
+% Total Unfunded Commitment
+% Eligible Unfunded Commitment
+Concentration Limit
+Excess Concentration
+Eligible Commitment
+Advance Rate
+Borrowing Base Contribution
+% of Borrowing Base
+Eligibility
