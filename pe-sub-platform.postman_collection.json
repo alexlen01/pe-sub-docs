@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.5.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.6.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -150,7 +150,7 @@
                   "path": ["api", "lps"],
                   "query": [
                     { "key": "facilityId", "value": "{{facilityId}}" },
-                    { "key": "cls",        "value": "Rated", "description": "Rated | Approved | Institutional | Other | Ineligible" }
+                    { "key": "cls",        "value": "Rated", "description": "Rated | Unrated >2bn | Unrated 1-2bn | Eligible | Excluded" }
                   ]
                 }
               },
@@ -212,7 +212,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"extraction\": {\n    \"template\": {\n      \"format\": \"CITIBANK\",\n      \"version\": null,\n      \"headerRowIndex\": 2\n    },\n    \"records\": [\n      {\n        \"rowIndex\": 3,\n        \"investorName\":       { \"value\": \"Blackstone Capital Partners\", \"confidence\": 1.0,  \"sourceHeader\": \"Investor Name\" },\n        \"commitment\":         { \"value\": 50000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Total Commitment\" },\n        \"uncalled\":           { \"value\": 30000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Unfunded Commitment\" },\n        \"aum\":                { \"value\": 120000000000,                   \"confidence\": 1.0,  \"sourceHeader\": \"AUM\" },\n        \"agentRate\":          { \"value\": 0.65,                           \"confidence\": 1.0,  \"sourceHeader\": \"Advance Rate\" },\n        \"concentrationLimit\": { \"value\": 0.10,                           \"confidence\": 0.85, \"sourceHeader\": \"Conc. Limit\" },\n        \"requiresReview\": false,\n        \"warnings\": []\n      },\n      {\n        \"rowIndex\": 4,\n        \"investorName\":       { \"value\": \"KKR Credit Opportunities\",     \"confidence\": 0.65, \"sourceHeader\": \"Investor Name\" },\n        \"commitment\":         { \"value\": 25000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Total Commitment\" },\n        \"uncalled\":           { \"value\": 15000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Unfunded Commitment\" },\n        \"aum\":                { \"value\": null,                           \"confidence\": 0.0,  \"sourceHeader\": null },\n        \"agentRate\":          { \"value\": 0.50,                           \"confidence\": 1.0,  \"sourceHeader\": \"Advance Rate\" },\n        \"concentrationLimit\": { \"value\": 0.10,                           \"confidence\": 0.85, \"sourceHeader\": \"Conc. Limit\" },\n        \"requiresReview\": true,\n        \"warnings\": [\n          { \"field\": \"investorName\", \"message\": \"low confidence 65% — header: Investor Name\", \"rowIndex\": 4 },\n          { \"field\": \"aum\",         \"message\": \"column not found in spreadsheet\",             \"rowIndex\": 4 }\n        ]\n      }\n    ],\n    \"totalFlagged\": 1\n  }\n}",
+                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"extraction\": {\n    \"template\": {\n      \"format\": \"CITIBANK\",\n      \"version\": null,\n      \"headerRowIndex\": 2\n    },\n    \"records\": [\n      {\n        \"rowIndex\": 3,\n        \"investorName\":       { \"value\": \"Blackstone Capital Partners\", \"confidence\": 1.0,  \"sourceHeader\": \"Investor Name\" },\n        \"commitment\":         { \"value\": 50000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Total Commitment\" },\n        \"uncalled\":           { \"value\": 30000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Unfunded Commitment\" },\n        \"aum\":                { \"value\": 120000000000,                   \"confidence\": 1.0,  \"sourceHeader\": \"AUM\" },\n        \"agentRate\":          { \"value\": 0.65,                           \"confidence\": 1.0,  \"sourceHeader\": \"Advance Rate\" },\n        \"concentrationLimit\": { \"value\": 0.10,                           \"confidence\": 0.85, \"sourceHeader\": \"Conc. Limit\" },\n        \"requiresReview\": false,\n        \"warnings\": []\n      }\n    ],\n    \"totalFlagged\": 0\n  }\n}",
                   "options": { "raw": { "language": "json" } }
                 },
                 "url": {
@@ -220,7 +220,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "lps", "ingest"]
                 },
-                "description": "Called by pe-sub-extraction after parsing an agent schedule. Each row is matched against the facility's LP records. Actions: Updated (fields written), Queued (credit officer review needed), Skipped (no match)."
+                "description": "Called internally by pe-sub-api after extraction. Each row is matched against the facility's LP records. Actions: Updated (fields written), Queued (credit officer review needed), Skipped (no match)."
               },
               "response": []
             }
@@ -316,6 +316,20 @@
                 "description": "Concentration breaches derived from the latest BB snapshot."
               },
               "response": []
+            },
+            {
+              "name": "EAR report",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/reports/ear/{{facilityId}}",
+                  "host": ["{{base}}"],
+                  "path": ["api", "reports", "ear", "{{facilityId}}"]
+                },
+                "description": "Effective Advance Rate history — array of { calculatedAt, ear, agentEar, earDelta } data points across all BB snapshots."
+              },
+              "response": []
             }
           ]
         },
@@ -362,7 +376,8 @@
                     { "key": "facilityId",   "value": "{{facilityId}}", "type": "text" },
                     { "key": "agentBank",    "value": "Citibank",       "type": "text", "description": "Citibank | JPMorgan | Goldman Sachs | Barclays | UBS" },
                     { "key": "periodMonth",  "value": "2026-05-31",     "type": "text", "description": "YYYY-MM-DD" },
-                    { "key": "file",         "src": "",                 "type": "file", "description": "XLSX, XLS, or CSV (max 50 MB)" }
+                    { "key": "file",         "src": "",                 "type": "file", "description": "XLSX, XLS, or CSV (max 50 MB)" },
+                    { "key": "notes",        "value": "",               "type": "text", "description": "Optional analyst notes", "disabled": true }
                   ]
                 },
                 "url": {
@@ -370,7 +385,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions"]
                 },
-                "description": "Multipart upload. The file is stored on disk; returns submission metadata."
+                "description": "Multipart upload. Triggers pe-sub-extraction immediately. Returns submission metadata with status=Review when extraction succeeds."
               },
               "response": []
             },
@@ -384,6 +399,123 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}"]
                 }
+              },
+              "response": []
+            },
+            {
+              "name": "Abort submission",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/abort",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "abort"]
+                },
+                "description": "Deletes the submission_extractions row and resets facility status. Returns updated submission with status=Aborted."
+              },
+              "response": []
+            },
+            {
+              "name": "Confirm extraction",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/confirm",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "confirm"]
+                },
+                "description": "Marks submission as Processed. Auto-learns BB template (sheet name + header row) for the agent bank if not already stored."
+              },
+              "response": []
+            },
+            {
+              "name": "Get extracted LPs",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/extracted-lps",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "extracted-lps"]
+                },
+                "description": "Returns the extracted_lps JSONB from submission_extractions — array of ExtractedLpRecord with per-field confidence scores."
+              },
+              "response": []
+            },
+            {
+              "name": "Get field map",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/field-map",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "field-map"]
+                },
+                "description": "Returns a labelled field map: extracted column header → canonical LP Master field + group, for all recognised columns."
+              },
+              "response": []
+            },
+            {
+              "name": "Get doc recognition",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/doc-recognition",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "doc-recognition"]
+                },
+                "description": "Returns document recognition metadata: template format, sheet name, header row index, total rows, flagged count, field mapping count, unrecognized count."
+              },
+              "response": []
+            },
+            {
+              "name": "Get unrecognized columns",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/unrecognized-columns",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "unrecognized-columns"]
+                },
+                "description": "Returns column headers from the uploaded document that could not be matched to any canonical LP field."
+              },
+              "response": []
+            },
+            {
+              "name": "Remap column",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"extractedKey\": \"Unfunded Commitment\",\n  \"canonicalKey\": \"UNCALLED\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/remap",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "remap"]
+                },
+                "description": "Maps an unrecognised column header to a canonical LP field. Follow with a reextract call to apply the mapping."
+              },
+              "response": []
+            },
+            {
+              "name": "Re-extract",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/reextract",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "reextract"]
+                },
+                "description": "Re-runs the full extraction pipeline using the stored file plus any saved column remappings and BB template hints for the agent bank."
               },
               "response": []
             }
@@ -402,7 +534,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "field-mapping", "alias-groups"]
                 },
-                "description": "Canonical fields with their aliases, grouped by category (Bank, System, User)."
+                "description": "Canonical fields with their aliases, grouped by LP Master section."
               },
               "response": []
             },
@@ -416,7 +548,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "field-mapping", "canonical-fields"]
                 },
-                "description": "Flat list of canonical fields (value, label). Used to populate dropdowns."
+                "description": "Flat list of canonical fields (value, label, extractable). Used to populate mapping dropdowns."
               },
               "response": []
             },
@@ -535,7 +667,151 @@
                   "host": ["{{base}}"],
                   "path": ["api", "matching", "test"]
                 },
-                "description": "Runs fuzzy LP name matching (Jaro-Winkler + Levenshtein) against all LPs. Returns ranked matches with scores and Accept/Queue/Reject decisions."
+                "description": "Runs fuzzy LP name matching (Jaro-Winkler + Levenshtein) against all LPs. Returns ranked matches with scores."
+              },
+              "response": []
+            },
+            {
+              "name": "List match queue",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/matching/queue?submissionId={{submissionId}}",
+                  "host": ["{{base}}"],
+                  "path": ["api", "matching", "queue"],
+                  "query": [
+                    { "key": "submissionId", "value": "{{submissionId}}", "description": "Filter by submission" }
+                  ]
+                },
+                "description": "Returns match_queue_entries for the given submission — one row per extracted LP that was queued for credit officer review."
+              },
+              "response": []
+            },
+            {
+              "name": "Resolve queue item",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"accepted\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/matching/queue/{{matchQueueItemId}}",
+                  "host": ["{{base}}"],
+                  "path": ["api", "matching", "queue", "{{matchQueueItemId}}"]
+                },
+                "description": "decision: accepted | rejected | manual. When decision=manual, also provide masterName with the correct LP name."
+              },
+              "response": []
+            },
+            {
+              "name": "Get matching thresholds",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/matching/thresholds",
+                  "host": ["{{base}}"],
+                  "path": ["api", "matching", "thresholds"]
+                },
+                "description": "Returns current autoAccept and reviewQueue score thresholds from matching_config."
+              },
+              "response": []
+            },
+            {
+              "name": "Update matching thresholds",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"autoAccept\": 90,\n  \"reviewQueue\": 70\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/matching/thresholds",
+                  "host": ["{{base}}"],
+                  "path": ["api", "matching", "thresholds"]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Configuration",
+          "item": [
+            {
+              "name": "Get eligibility config",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/config/eligibility",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "eligibility"]
+                },
+                "description": "Returns all 6 eligibility config keys (busa_tiers, agent_tiers, agent_rate_params, elig_rules, conc_limits, global_settings) assembled from the in-memory cache."
+              },
+              "response": []
+            },
+            {
+              "name": "Update eligibility config section",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\n  { \"cls\": \"Rated\",          \"rate\": 90 },\n  { \"cls\": \"Unrated >2bn\",   \"rate\": 85 },\n  { \"cls\": \"Unrated 1-2bn\", \"rate\": 80 },\n  { \"cls\": \"Eligible\",      \"rate\": 75 }\n]",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/config/eligibility?section=busa_tiers",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "eligibility"],
+                  "query": [
+                    { "key": "section", "value": "busa_tiers", "description": "Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | global_settings" }
+                  ]
+                },
+                "description": "Upserts a single config key. The ?section= param appears in the audit log detail. Body is the new JSON value for the key."
+              },
+              "response": []
+            },
+            {
+              "name": "Get matching config",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/config/matching",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "matching"]
+                },
+                "description": "Returns matching_config from cache: autoAccept, reviewQueue, jwWeight, levWeight, legalSuffixes, knownAbbreviations."
+              },
+              "response": []
+            },
+            {
+              "name": "Update matching config",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"defaultThresholds\": {\n    \"autoAccept\": 90,\n    \"reviewQueue\": 70\n  }\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/config/matching?section=Confidence+Thresholds",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "matching"],
+                  "query": [
+                    { "key": "section", "value": "Confidence Thresholds", "description": "Appears in the audit log detail" }
+                  ]
+                }
               },
               "response": []
             }
@@ -603,7 +879,7 @@
     },
     {
       "name": "pe-sub-extraction",
-      "description": "Document extraction service — port 3002",
+      "description": "Document extraction service — port 3002. Called internally by pe-sub-api on every upload and re-extraction. Use this section for direct testing only.",
       "item": [
         {
           "name": "Health check",
@@ -626,8 +902,12 @@
             "body": {
               "mode": "formdata",
               "formdata": [
-                { "key": "facilityId", "value": "{{facilityId}}", "type": "text", "description": "Target facility ID (forwarded to pe-sub-api)" },
-                { "key": "file",       "src": "",                 "type": "file", "description": "XLSX, XLS, or CSV agent schedule (max 50 MB)" }
+                { "key": "facilityId",    "value": "{{facilityId}}", "type": "text",  "description": "Target facility ID (used when forwarding to pe-sub-api)" },
+                { "key": "file",          "src": "",                 "type": "file",  "description": "XLSX, XLS, or CSV agent schedule (max 50 MB)" },
+                { "key": "forward",       "value": "false",          "type": "text",  "description": "Set true to forward result to pe-sub-api/lps/ingest", "disabled": true },
+                { "key": "aliasConfig",   "value": "",               "type": "text",  "description": "JSON alias map from FM Dictionary — overrides built-in aliases when provided", "disabled": true },
+                { "key": "sheetNameHint", "value": "",               "type": "text",  "description": "Preferred sheet name; bypasses sheet heuristic when provided", "disabled": true },
+                { "key": "headerRowHint", "value": "",               "type": "text",  "description": "Known header row index; bypasses header detection when provided", "disabled": true }
               ]
             },
             "url": {
@@ -635,7 +915,7 @@
               "host": ["{{extractionBase}}"],
               "path": ["api", "extract"]
             },
-            "description": "Parses the uploaded agent schedule, detects the bank template (Citibank, JPM, Goldman Sachs, Barclays, UBS), extracts LP records with per-field confidence scores, and forwards the result to pe-sub-api/lps/ingest. Returns the ExtractionResult regardless of forwarding outcome."
+            "description": "Parses the uploaded agent schedule, detects bank template and header row, extracts LP records with per-field confidence scores. forward=false by default in this test request — pe-sub-api is not notified."
           },
           "response": []
         }
@@ -643,138 +923,8 @@
     },
     {
       "name": "Planned — Not Yet Implemented",
-      "description": "Endpoints defined in openapi.yaml v0.5.0 but not yet implemented. Include them now so this collection stays ahead of implementation. Requests will return 404 until the endpoint is live.",
+      "description": "Endpoints not yet implemented. Requests will return 404 until live. Sync source: pe-sub-docs/openapi.yaml v0.6.0.",
       "item": [
-        {
-          "name": "[PLANNED] EAR report",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/reports/ear/{{facilityId}}",
-              "host": ["{{base}}"],
-              "path": ["api", "reports", "ear", "{{facilityId}}"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Submission — extracted LPs",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/submissions/{{submissionId}}/extracted-lps",
-              "host": ["{{base}}"],
-              "path": ["api", "submissions", "{{submissionId}}", "extracted-lps"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Submission — field map",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/submissions/{{submissionId}}/field-map",
-              "host": ["{{base}}"],
-              "path": ["api", "submissions", "{{submissionId}}", "field-map"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Submission — doc recognition",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/submissions/{{submissionId}}/doc-recognition",
-              "host": ["{{base}}"],
-              "path": ["api", "submissions", "{{submissionId}}", "doc-recognition"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Submission — unrecognized columns",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/submissions/{{submissionId}}/unrecognized-columns",
-              "host": ["{{base}}"],
-              "path": ["api", "submissions", "{{submissionId}}", "unrecognized-columns"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Matching — list review queue",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/matching/queue?submissionId={{submissionId}}",
-              "host": ["{{base}}"],
-              "path": ["api", "matching", "queue"],
-              "query": [
-                { "key": "submissionId", "value": "{{submissionId}}", "disabled": true }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Matching — resolve queue item",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"decision\": \"accepted\",\n  \"resolvedLpId\": 42\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{base}}/api/matching/queue/{{matchQueueItemId}}",
-              "host": ["{{base}}"],
-              "path": ["api", "matching", "queue", "{{matchQueueItemId}}"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Matching — get thresholds",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/matching/thresholds",
-              "host": ["{{base}}"],
-              "path": ["api", "matching", "thresholds"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Matching — update thresholds",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"autoAccept\": 90,\n  \"reviewQueue\": 70\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{base}}/api/matching/thresholds",
-              "host": ["{{base}}"],
-              "path": ["api", "matching", "thresholds"]
-            }
-          },
-          "response": []
-        },
         {
           "name": "[PLANNED] Config — classification",
           "request": {
@@ -784,19 +934,6 @@
               "raw": "{{base}}/api/config/classification",
               "host": ["{{base}}"],
               "path": ["api", "config", "classification"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Config — eligibility",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/config/eligibility",
-              "host": ["{{base}}"],
-              "path": ["api", "config", "eligibility"]
             }
           },
           "response": []
@@ -823,19 +960,6 @@
               "raw": "{{base}}/api/config/audit",
               "host": ["{{base}}"],
               "path": ["api", "config", "audit"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Config — matching settings",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/config/matching",
-              "host": ["{{base}}"],
-              "path": ["api", "config", "matching"]
             }
           },
           "response": []

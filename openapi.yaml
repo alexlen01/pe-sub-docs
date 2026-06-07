@@ -18,7 +18,7 @@ info:
     - Routes with no tag note are **implemented** in `pe-sub-api`.
     - Routes marked `[planned]` are not yet implemented; the UI falls back to
       static mock data when they return non-2xx.
-  version: 0.5.0
+  version: 0.6.0
   contact:
     name: PE Sub Platform Team
 
@@ -39,17 +39,17 @@ tags:
     description: Agent BB document upload and submission lifecycle
   - name: extraction
     description: >
-      Document extraction results served by `pe-sub-extraction` (port 3002) and
-      ingested into `pe-sub-api` via `POST /lps/ingest`. Submission-level read
-      endpoints are [planned] pending persistence of extraction results.
+      Document extraction results persisted in `submission_extractions` by `pe-sub-api`
+      and served via submission sub-endpoints. `pe-sub-extraction` (port 3002) is called
+      internally by `pe-sub-api` on upload and re-extraction; the UI never calls it directly.
   - name: field-mapping
     description: Alias-group dictionary mapping extracted headers to canonical LP fields
   - name: matching
-    description: LP name-matching queue and decision workflow  [planned]
+    description: LP name-matching queue and decision workflow
   - name: audit
     description: Audit trail — append-only event log written by BbController, LpController, SubmissionController, and the login hook
   - name: config
-    description: Read-only configuration data consumed by UI screens  [planned]
+    description: Platform configuration — advance rates, eligibility rules, matching thresholds
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATHS
@@ -91,6 +91,29 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Facility'
+    post:
+      tags: [facilities]
+      summary: Create a new facility
+      operationId: createFacility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, agentBank]
+              properties:
+                name:      { type: string }
+                agentBank: { type: string }
+      responses:
+        '201':
+          description: Created facility record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '409':
+          description: Facility name already exists
 
   /facilities/{id}:
     get:
@@ -386,7 +409,7 @@ paths:
   /reports/ear/{facilityId}:
     get:
       tags: [reports]
-      summary: Effective Advance Rate history across all snapshots  [planned]
+      summary: Effective Advance Rate history across all snapshots
       operationId: getEARReport
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
@@ -435,7 +458,7 @@ paths:
                   $ref: '#/components/schemas/Submission'
     post:
       tags: [submissions]
-      summary: Create a new submission (document upload)
+      summary: Create a new submission (document upload); triggers extraction immediately
       operationId: createSubmission
       requestBody:
         required: true
@@ -456,6 +479,9 @@ paths:
                   type: string
                   format: binary
                   description: Agent BB Excel file; max 50 MB
+                notes:
+                  type: string
+                  description: Optional analyst notes
       responses:
         '201':
           description: Created submission record
@@ -476,6 +502,96 @@ paths:
       responses:
         '200':
           description: Submission record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /submissions/{id}/abort:
+    post:
+      tags: [submissions]
+      summary: Abort a submission — deletes extraction record and resets facility status
+      operationId: abortSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Updated submission record with status Aborted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /submissions/{id}/confirm:
+    post:
+      tags: [submissions]
+      summary: Confirm extraction; auto-learns BB template for the agent bank
+      description: >
+        Marks the submission as Processed. On first confirmation for a given agent bank,
+        the sheet name and header row from the extraction are saved to `bb_templates`
+        so subsequent uploads from the same bank bypass heuristic sheet/header detection.
+      operationId: confirmSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Updated submission record with status Processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /submissions/{id}/remap:
+    post:
+      tags: [submissions, extraction]
+      summary: Map an unrecognised column to a canonical field
+      description: >
+        Saves a user mapping for an extracted column header to a canonical LP field.
+        The caller should follow this with a call to `POST /{id}/reextract` to apply
+        the new mapping; the UI triggers this automatically.
+      operationId: remapSubmissionColumn
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [extractedKey, canonicalKey]
+              properties:
+                extractedKey:
+                  type: string
+                  description: The unrecognised column header string
+                canonicalKey:
+                  type: string
+                  description: The canonical field name to map it to
+      responses:
+        '200':
+          description: Mapping saved
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /submissions/{id}/reextract:
+    post:
+      tags: [submissions, extraction]
+      summary: Re-run extraction pipeline for this submission using the stored file
+      description: >
+        Calls `pe-sub-extraction` again using the original uploaded file plus any
+        saved column remappings and the BB template hint (if known for this agent bank).
+        The `submission_extractions` record is updated in place.
+      operationId: reextractSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Updated submission record
           content:
             application/json:
               schema:
@@ -518,7 +634,7 @@ paths:
   /submissions/{id}/extracted-lps:
     get:
       tags: [extraction]
-      summary: Extracted LP rows from the submitted document  [planned]
+      summary: Extracted LP rows from the submitted document
       operationId: getExtractedLPs
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -535,7 +651,7 @@ paths:
   /submissions/{id}/field-map:
     get:
       tags: [extraction]
-      summary: Column-to-canonical-field mapping for this submission  [planned]
+      summary: Column-to-canonical-field mapping for this submission
       operationId: getFieldMap
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -552,7 +668,7 @@ paths:
   /submissions/{id}/doc-recognition:
     get:
       tags: [extraction]
-      summary: Document recognition metadata (bank detected, sheet names, etc.)  [planned]
+      summary: Document recognition metadata (bank detected, sheet name, header row, row counts)
       operationId: getDocRecognition
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -567,7 +683,7 @@ paths:
   /submissions/{id}/unrecognized-columns:
     get:
       tags: [extraction]
-      summary: Column headers that could not be mapped to any canonical field  [planned]
+      summary: Column headers that could not be mapped to any canonical field
       operationId: getUnrecognizedColumns
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -601,7 +717,7 @@ paths:
   /field-mapping/canonical-fields:
     get:
       tags: [field-mapping]
-      summary: All canonical LP Master field names as value/label pairs
+      summary: All canonical LP Master field names as value/label/extractable triples
       operationId: getCanonicalFields
       responses:
         '200':
@@ -613,8 +729,9 @@ paths:
                 items:
                   type: object
                   properties:
-                    value: { type: string, description: Canonical field name }
-                    label: { type: string, description: Group-prefixed label e.g. "Identity & Classification › Investor Name" }
+                    value:      { type: string, description: Canonical field name }
+                    label:      { type: string, description: Group-prefixed label e.g. "Identity & Classification › Investor Name" }
+                    extractable: { type: boolean, description: True if pe-sub-extraction can populate this field from agent documents }
 
   /field-mapping/blocklist:
     get:
@@ -735,7 +852,7 @@ paths:
   /matching/queue:
     get:
       tags: [matching]
-      summary: Name-matching queue for the active submission  [planned]
+      summary: Name-matching queue for the active submission
       operationId: getMatchQueue
       parameters:
         - name: submissionId
@@ -756,7 +873,7 @@ paths:
   /matching/queue/{id}:
     patch:
       tags: [matching]
-      summary: Accept or reject a single match decision  [planned]
+      summary: Accept or reject a single match decision
       operationId: updateMatchDecision
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -781,7 +898,7 @@ paths:
   /matching/thresholds:
     get:
       tags: [matching]
-      summary: Current name-matching score thresholds  [planned]
+      summary: Current name-matching score thresholds
       operationId: getMatchThresholds
       responses:
         '200':
@@ -792,7 +909,7 @@ paths:
                 $ref: '#/components/schemas/MatchThresholds'
     patch:
       tags: [matching]
-      summary: Update name-matching score thresholds  [planned]
+      summary: Update name-matching score thresholds
       operationId: updateMatchThresholds
       requestBody:
         required: true
@@ -809,7 +926,7 @@ paths:
   /config/classification:
     get:
       tags: [config]
-      summary: LP classification options, rate maps, and qualifying criteria  [planned]
+      summary: LP classification options, rate maps, and qualifying criteria  [planned — returns 404]
       operationId: getClassificationConfig
       responses:
         '200':
@@ -822,20 +939,40 @@ paths:
   /config/eligibility:
     get:
       tags: [config]
-      summary: BUSA/Agent rate tiers, eligibility rules, and concentration limits  [planned]
+      summary: BUSA/Agent rate tiers, eligibility rules, and concentration limits
       operationId: getEligibilityConfig
       responses:
         '200':
-          description: Eligibility configuration
+          description: Eligibility configuration (all 6 keys assembled from cache)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/EligibilityConfig'
+    put:
+      tags: [config]
+      summary: Upsert a single eligibility config key
+      operationId: updateEligibilityConfig
+      parameters:
+        - name: section
+          in: query
+          schema:
+            type: string
+          description: Config key being updated — used as audit log detail (e.g. "busa_tiers")
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: The new JSON value for the given config key
+      responses:
+        '200':
+          description: Updated config value; audit event written
 
   /config/wizard:
     get:
       tags: [config]
-      summary: Upload wizard steps, snapshot options, and calculation modes  [planned]
+      summary: Upload wizard steps, snapshot options, and calculation modes  [planned — returns 404]
       operationId: getWizardConfig
       responses:
         '200':
@@ -848,7 +985,7 @@ paths:
   /config/audit:
     get:
       tags: [config]
-      summary: Audit trail event types, retention label, and default date range  [planned]
+      summary: Audit trail event types, retention label, and default date range  [planned — returns 404]
       operationId: getAuditConfig
       responses:
         '200':
@@ -861,7 +998,7 @@ paths:
   /config/matching:
     get:
       tags: [config]
-      summary: Matching config — legal suffixes, abbreviation dictionary, default thresholds  [planned]
+      summary: Matching config — legal suffixes, abbreviation dictionary, thresholds
       operationId: getMatchingConfig
       responses:
         '200':
@@ -870,11 +1007,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MatchingConfig'
+    patch:
+      tags: [config]
+      summary: Update matching config
+      operationId: updateMatchingConfig
+      parameters:
+        - name: section
+          in: query
+          schema:
+            type: string
+          description: Config section being updated — used as audit log detail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchingConfig'
+      responses:
+        '200':
+          description: Updated matching config; audit event written
 
   /config/reports:
     get:
       tags: [config]
-      summary: Report tabs, certificate options, and scheduled report definitions  [planned]
+      summary: Report tabs, certificate options, and scheduled report definitions  [planned — returns 404]
       operationId: getReportsConfig
       responses:
         '200':
@@ -1157,6 +1313,7 @@ components:
         fileName:     { type: string, description: Original filename as uploaded }
         filePath:     { type: string, nullable: true, description: Absolute server path to the saved file }
         uploadedBy:   { type: integer, nullable: true, description: FK → users.id }
+        notes:        { type: string, nullable: true, description: Optional analyst notes submitted with the upload }
         createdAt:    { type: string, format: date-time }
         updatedAt:    { type: string, format: date-time }
 
@@ -1173,12 +1330,15 @@ components:
 
     DocRecognition:
       type: object
+      description: Document recognition metadata from submission_extractions
       properties:
-        agentBank:    { type: string, nullable: true }
-        sheetNames:   { type: array, items: { type: string } }
-        headerRow:    { type: integer, nullable: true }
-        totalRows:    { type: integer }
-        confidence:   { type: number }
+        templateFormat:   { type: string, nullable: true, description: "Detected bank format: CITIBANK, JPM, GOLDMAN_SACHS, BARCLAYS, INTERNAL, UNKNOWN" }
+        sheetName:        { type: string, nullable: true, description: Name of the BB sheet extracted from }
+        headerRowIndex:   { type: integer, nullable: true, description: Zero-based header row index in the sheet }
+        totalRows:        { type: integer, description: Total data rows parsed }
+        flaggedCount:     { type: integer, description: Rows with requiresReview=true }
+        fieldMappingCount: { type: integer, description: Number of columns mapped to canonical fields }
+        unrecognizedCount: { type: integer, description: Number of columns not mapped to any canonical field }
 
     # ── Field Mapping ──────────────────────────────────────────────────────────
 
@@ -1233,11 +1393,16 @@ components:
       properties:
         id:            { type: integer }
         submissionId:  { type: integer }
-        agentName:     { type: string }
-        masterName:    { type: string, nullable: true }
+        facilityId:    { type: integer }
+        facilityName:  { type: string, description: Facility name resolved for display }
+        agentName:     { type: string, description: Extracted investor name from the document }
+        masterName:    { type: string, nullable: true, description: Best-matched LP Master name }
         score:         { type: number, description: Combined similarity score 0–100 }
-        decision:      { type: string, enum: [pending, accepted, rejected, manual], nullable: true }
-        isNew:         { type: boolean, description: True if no LP Master record exists for this LP }
+        decision:      { type: string, enum: [pending, accepted, rejected, manual] }
+        masterNameOverride: { type: string, nullable: true, description: Manual name entered by credit officer when decision is manual }
+        isNew:         { type: boolean, description: True if no existing LP Master record matched }
+        status:        { type: string, description: UI status derived from decision — pending / accepted / rejected / manual }
+        reasons:       { type: array, items: { type: string }, description: Reasons explaining the queue action (low match score, low extraction confidence, etc.) }
 
     MatchThresholds:
       type: object
