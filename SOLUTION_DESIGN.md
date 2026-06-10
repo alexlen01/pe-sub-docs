@@ -103,8 +103,9 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 |------|----------|
 | `V1_1__schema.sql` | All DDL — every `CREATE TABLE` and index |
 | `V1_2__seed.sql` | Field Mapping Dictionary seed data (`fm_canonical_fields`, `fm_aliases`, `fm_blocklist`) |
+| `V1_3__shadow_bb_state.sql` | `ALTER TABLE submissions ADD COLUMN wizard_step INTEGER NOT NULL DEFAULT 1, ADD COLUMN shadow_bb_overrides JSONB` |
 
-To make a schema change: add a new `V1_3__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`.
+To make a schema change: add a new `V1_4__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`.
 
 ### `users`
 
@@ -165,11 +166,13 @@ Snapshots are append-only. The latest snapshot per facility is the current Shado
 | facility_id | integer FK → facilities | Not null |
 | agent_bank | varchar(255) | Not null |
 | period_month | varchar(20) | Date string passed from the UI e.g. "2026-05-31" |
-| status | varchar(50) | Default `Processing`; transitions to `Review` after extraction |
+| status | varchar(50) | Default `Processing`; transitions to `Review` (extraction complete) or `Error` (pe-sub-extraction unreachable) |
 | file_name | varchar(255) | Original filename as uploaded |
 | file_path | varchar(512) nullable | Absolute server path to the saved file; configured via `${app.uploads.path}` |
 | uploaded_by | integer FK → users nullable | |
 | notes | text nullable | Optional analyst notes submitted with the upload form |
+| wizard_step | integer | 1-indexed step in the ingest wizard (1=Upload, 3=Review Extraction, 4=Review Matches, 5=LP Classification & Rate Assignment); default 1; step 2 is transient and never stored |
+| shadow_bb_overrides | jsonb nullable | LP classification/rate overrides committed by the credit officer on the Run Shadow BB screen; keyed by LP `_key` |
 | created_at / updated_at | timestamp | |
 
 ### `submission_extractions`
@@ -477,6 +480,8 @@ One system-managed job planned: runs on the 1st of each month, resets all active
 | 22 | BB template registry auto-learned on confirm | `bb_templates` is populated on first `POST /{id}/confirm` for each agent bank (case-insensitive). Subsequent uploads for that bank pass `sheetNameHint` and `headerRowHint` to `pe-sub-extraction`, bypassing heuristic detection and reducing mis-detection risk |
 | 23 | Upload triggers extraction immediately; no manual step | `POST /api/submissions` calls `pe-sub-extraction` inline with `forward=false`, stores the result in `submission_extractions`, and advances the submission status to `Review`. There is no separate "trigger extraction" step in the UI |
 | 24 | Re-extraction on every Map or Discard action | After mapping or discarding an unrecognised column in the ExtractionPreview screen, the UI automatically calls `POST /{id}/reextract` → `GET /{id}/extracted-lps` before re-rendering. No manual Re-extract button |
+| 28 | Upload checks submission status before navigating to ExtractionPreview | When `pe-sub-extraction` is unreachable, `POST /api/submissions` returns the submission with `status = 'Error'` and no `submission_extractions` row exists. The UI checks `sub.status === 'Error'` after upload and surfaces an inline error instead of navigating to ExtractionPreview, preventing a guaranteed 404 cascade on all extraction sub-endpoints |
+| 29 | ExtractionPreview state initialises to empty arrays, not prototype data | All five stateful arrays in ExtractionPreview (extracted, fieldMap, docRec, canonicals, unrecog) are initialised to `[]`. Initialising with prototype constants meant any API failure left prototype data visible — the catch block only set `loadError` without clearing state. Prototype data is returned by the service layer when `screenMode === 'prototype'`; the component never holds it directly |
 | 25 | Null-marker filtering at two levels | N/A, N/R, NA, NR values are filtered at extraction time: (a) row-level — entire row skipped if investor name is a null marker; (b) field-level — cell value stored as null with a "value missing" warning |
 | 26 | `CANONICAL_META` in SubmissionController for field-map labelling | A static map in `SubmissionController.java` keys extraction_key or canonical name to `(canonical, group)`. Used to label field-map rows returned by `GET /{id}/field-map`. Non-extractable fields are keyed by canonical name; extractable fields by extraction_key. Without this map, matched fields appeared in group "Other" |
 | 27 | Two-role RBAC: Credit Administrator and Supervisor | Consolidated from three roles (Credit Officer, Supervisor, Admin). Credit Administrator absorbs all Credit Officer day-to-day operations and all Admin system configuration actions (Configuration Studio, Match Thresholds, Field Mapping, User Management). Supervisor retains escalation authority: override any active workflow step regardless of ownership, reassign submission ownership, full cross-facility audit trail, and LP classification override on non-owned submissions. Configuration edits are Credit Administrator-only; Supervisor has view-only access to configuration. See `pe-sub-platform/docs/RBAC_ROLES.md` for the full permission matrix and Supervisor-specific action definitions |
