@@ -18,7 +18,7 @@ info:
     - Routes with no tag note are **implemented** in `pe-sub-api`.
     - Routes marked `[planned]` are not yet implemented; the UI falls back to
       static mock data when they return non-2xx.
-  version: 0.6.0
+  version: 0.7.0
   contact:
     name: PE Sub Platform Team
 
@@ -50,6 +50,8 @@ tags:
     description: Audit trail — append-only event log written by BbController, LpController, SubmissionController, and the login hook
   - name: config
     description: Platform configuration — advance rates, eligibility rules, matching thresholds
+  - name: notifications
+    description: Server-Sent Events stream for real-time broadcast of facility and LP events
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATHS
@@ -409,7 +411,7 @@ paths:
   /reports/ear/{facilityId}:
     get:
       tags: [reports]
-      summary: Effective Advance Rate history across all snapshots
+      summary: Effective Advance Rate history across all snapshots  [planned — returns 404]
       operationId: getEARReport
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
@@ -449,7 +451,7 @@ paths:
           description: Filter by facility; omit for all submissions
       responses:
         '200':
-          description: Array of submission records ordered newest first
+          description: Array of submission records ordered newest first (Processing status filtered out)
           content:
             application/json:
               schema:
@@ -484,7 +486,7 @@ paths:
                   description: Optional analyst notes
       responses:
         '201':
-          description: Created submission record
+          description: Created submission record; extraction pipeline runs asynchronously — status is Processing until extraction completes
           content:
             application/json:
               schema:
@@ -512,34 +514,67 @@ paths:
   /submissions/{id}/abort:
     post:
       tags: [submissions]
-      summary: Abort a submission — deletes extraction record and resets facility status
+      summary: Abort a submission — deletes extraction record, match queue entries, uploaded file, and resets facility status
       operationId: abortSubmission
       parameters:
         - $ref: '#/components/parameters/IdPath'
       responses:
-        '200':
-          description: Updated submission record with status Aborted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Submission'
+        '204':
+          description: Submission aborted; no response body
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cannot abort — submission is already Processed or already Aborted
 
   /submissions/{id}/confirm:
     post:
       tags: [submissions]
-      summary: Confirm extraction; auto-learns BB template for the agent bank
+      summary: Confirm extraction; advances wizard to step 4, auto-learns BB template, builds match queue
       description: >
-        Marks the submission as Processed. On first confirmation for a given agent bank,
-        the sheet name and header row from the extraction are saved to `bb_templates`
-        so subsequent uploads from the same bank bypass heuristic sheet/header detection.
+        Confirms the extraction result. Advances the submission to `wizardStep = 4`.
+        On first confirmation for a given agent bank, the sheet name and header row
+        from the extraction are saved to `bb_templates` so subsequent uploads from
+        the same bank bypass heuristic sheet/header detection.
+        Also (re)builds the `match_queue_entries` for the submission from the
+        extracted LP rows. Does NOT set submission status to Processed.
       operationId: confirmSubmission
       parameters:
         - $ref: '#/components/parameters/IdPath'
       responses:
         '200':
-          description: Updated submission record with status Processed
+          description: Confirmation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /submissions/{id}/shadow-bb-state:
+    patch:
+      tags: [submissions]
+      summary: Advance submission to wizard step 5; optionally persist Shadow BB overrides
+      description: >
+        Called on "Commit Decisions" (no overrides) and on "Save" (with LP classification/rate
+        overrides set by the credit officer on the Run Shadow BB screen).
+        Advances `wizardStep` to 5 and stores the overrides JSON in `shadow_bb_overrides`.
+      operationId: saveShadowBbState
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrides:
+                  type: object
+                  nullable: true
+                  description: Per-LP classification/rate overrides keyed by LP id
+      responses:
+        '200':
+          description: Updated submission record
           content:
             application/json:
               schema:
@@ -550,11 +585,17 @@ paths:
   /submissions/{id}/remap:
     post:
       tags: [submissions, extraction]
-      summary: Map an unrecognised column to a canonical field
+      summary: Map an unrecognised column to a canonical field, then immediately re-extracts
       description: >
-        Saves a user mapping for an extracted column header to a canonical LP field.
-        The caller should follow this with a call to `POST /{id}/reextract` to apply
-        the new mapping; the UI triggers this automatically.
+        Saves a User-tier alias mapping for the extracted column header to the given
+        canonical LP field (`fm_aliases` table). If the alias does not already exist it
+        is created and an audit event is written. Re-extraction is then triggered
+        immediately using the stored file — the extraction result in
+        `submission_extractions` is updated in place.
+
+        Returns `200 OK` with an empty body on success. If the alias was saved but
+        `pe-sub-extraction` is unreachable, returns `502 Bad Gateway`; the alias is
+        preserved and re-extraction can be retried via `POST /{id}/reextract`.
       operationId: remapSubmissionColumn
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -564,19 +605,23 @@ paths:
           application/json:
             schema:
               type: object
-              required: [extractedKey, canonicalKey]
+              required: [extractedHeader, canonical]
               properties:
-                extractedKey:
+                extractedHeader:
                   type: string
-                  description: The unrecognised column header string
-                canonicalKey:
+                  description: The unrecognised column header string as it appears in the document
+                canonical:
                   type: string
-                  description: The canonical field name to map it to
+                  description: The canonical field name to map it to (e.g. "UNCALLED")
       responses:
         '200':
-          description: Mapping saved
+          description: Alias saved and re-extraction complete
+        '400':
+          description: No stored file for this submission, or unknown canonical field
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          description: Alias saved but pe-sub-extraction unreachable; retry via POST /{id}/reextract
 
   /submissions/{id}/reextract:
     post:
@@ -586,18 +631,19 @@ paths:
         Calls `pe-sub-extraction` again using the original uploaded file plus any
         saved column remappings and the BB template hint (if known for this agent bank).
         The `submission_extractions` record is updated in place.
+        Writes a `Re-extraction` audit event on success.
       operationId: reextractSubmission
       parameters:
         - $ref: '#/components/parameters/IdPath'
       responses:
-        '200':
-          description: Updated submission record
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Submission'
+        '204':
+          description: Re-extraction complete; extraction record updated in place
+        '400':
+          description: No stored file for this submission
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          description: pe-sub-extraction service unreachable
 
   # ── Audit ────────────────────────────────────────────────────────────────────
 
@@ -640,7 +686,9 @@ paths:
         - $ref: '#/components/parameters/IdPath'
       responses:
         '200':
-          description: Array of extracted LP rows with confidence scores
+          description: >
+            Array of extracted LP rows stored in `submission_extractions.extracted_lps` JSONB.
+            Each row contains formatted field values and per-row confidence/review flags.
           content:
             application/json:
               schema:
@@ -657,13 +705,15 @@ paths:
         - $ref: '#/components/parameters/IdPath'
       responses:
         '200':
-          description: Map of extracted column name → canonical LP Master field name
+          description: >
+            Array of field mapping entries — one per recognised column — ordered as they
+            appear in the extraction result.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties:
-                  type: string
+                type: array
+                items:
+                  $ref: '#/components/schemas/FieldMapEntry'
 
   /submissions/{id}/doc-recognition:
     get:
@@ -679,6 +729,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DocRecognition'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /submissions/{id}/unrecognized-columns:
     get:
@@ -809,6 +861,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AliasEntry'
+        '409':
+          description: Alias text already mapped to another canonical field
 
   /field-mapping/aliases/{id}:
     delete:
@@ -846,20 +900,49 @@ paths:
                 $ref: '#/components/schemas/AliasEntry'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: New alias text already mapped to another canonical field
 
   # ── Matching ─────────────────────────────────────────────────────────────────
+
+  /matching/test:
+    post:
+      tags: [matching]
+      summary: Test LP name matching — returns ranked candidates with scores and actions
+      operationId: testLPNameMatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: Investor name to test
+      responses:
+        '200':
+          description: Ranked match candidates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchTestResult'
+        '400':
+          description: name is blank
 
   /matching/queue:
     get:
       tags: [matching]
-      summary: Name-matching queue for the active submission
+      summary: Name-matching queue; optionally filtered by submission
       operationId: getMatchQueue
       parameters:
         - name: submissionId
           in: query
-          required: true
+          required: false
           schema:
             type: integer
+          description: Filter by submission; omit to return all queue entries
       responses:
         '200':
           description: Array of match candidates with scores and decisions
@@ -883,22 +966,30 @@ paths:
           application/json:
             schema:
               type: object
-              required: [decision]
               properties:
                 decision:
                   type: string
                   enum: [accepted, rejected, manual]
+                  description: Decision value (case-insensitive; stored capitalised)
                 masterName:
                   type: string
-                  description: Required when decision is manual
+                  description: >
+                    When provided and non-blank, sets masterNameOverride and forces
+                    decision to Accepted regardless of the decision field
       responses:
         '200':
           description: Updated match queue item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchQueueItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /matching/thresholds:
     get:
       tags: [matching]
-      summary: Current name-matching score thresholds
+      summary: Current name-matching score thresholds  [planned — use GET /config/matching instead]
       operationId: getMatchThresholds
       responses:
         '200':
@@ -909,7 +1000,7 @@ paths:
                 $ref: '#/components/schemas/MatchThresholds'
     patch:
       tags: [matching]
-      summary: Update name-matching score thresholds
+      summary: Update name-matching score thresholds  [planned — use PUT /config/matching instead]
       operationId: updateMatchThresholds
       requestBody:
         required: true
@@ -943,11 +1034,17 @@ paths:
       operationId: getEligibilityConfig
       responses:
         '200':
-          description: Eligibility configuration (all 6 keys assembled from cache)
+          description: >
+            Eligibility configuration assembled from DB cache. Response keys are
+            SCREAMING_SNAKE_CASE: `BUSA_TIERS`, `AGENT_TIERS`, `AGENT_RATE_PARAMS`,
+            `ELIG_RULES`, `CONC_LIMITS`, `GLOBAL_SETTINGS`. Returns 404 if no
+            eligibility keys have been seeded.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/EligibilityConfig'
+        '404':
+          description: No eligibility config keys found in DB
     put:
       tags: [config]
       summary: Upsert a single eligibility config key
@@ -955,9 +1052,11 @@ paths:
       parameters:
         - name: section
           in: query
+          required: true
           schema:
             type: string
-          description: Config key being updated — used as audit log detail (e.g. "busa_tiers")
+            enum: [busa_tiers, agent_tiers, agent_rate_params, elig_rules, conc_limits, global_settings]
+          description: Config key being updated — stored as-is and used as audit log detail
       requestBody:
         required: true
         content:
@@ -967,12 +1066,12 @@ paths:
               description: The new JSON value for the given config key
       responses:
         '200':
-          description: Updated config value; audit event written
+          description: Updated config value echoed back; audit event written
 
   /config/wizard:
     get:
       tags: [config]
-      summary: Upload wizard steps, snapshot options, and calculation modes  [planned — returns 404]
+      summary: Upload wizard steps, snapshot options, and calculation modes
       operationId: getWizardConfig
       responses:
         '200':
@@ -981,11 +1080,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WizardConfig'
+        '404':
+          description: wizard_config key not yet seeded in DB
 
   /config/audit:
     get:
       tags: [config]
-      summary: Audit trail event types, retention label, and default date range  [planned — returns 404]
+      summary: Audit trail event types, retention label, and default date range
       operationId: getAuditConfig
       responses:
         '200':
@@ -994,6 +1095,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditConfig'
+        '404':
+          description: audit_config key not yet seeded in DB
 
   /config/matching:
     get:
@@ -1007,16 +1110,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MatchingConfig'
-    patch:
+        '404':
+          description: matching_config key not yet seeded in DB
+    put:
       tags: [config]
-      summary: Update matching config
+      summary: Replace matching config
       operationId: updateMatchingConfig
       parameters:
         - name: section
           in: query
           schema:
             type: string
-          description: Config section being updated — used as audit log detail
+          description: Config section label used in audit log detail (e.g. "thresholds", "weights", "suffixes", "abbreviations")
       requestBody:
         required: true
         content:
@@ -1025,12 +1130,12 @@ paths:
               $ref: '#/components/schemas/MatchingConfig'
       responses:
         '200':
-          description: Updated matching config; audit event written
+          description: Updated matching config; audit event written (`Match Config Change`)
 
   /config/reports:
     get:
       tags: [config]
-      summary: Report tabs, certificate options, and scheduled report definitions  [planned — returns 404]
+      summary: Report tabs, certificate options, and scheduled report definitions
       operationId: getReportsConfig
       responses:
         '200':
@@ -1039,6 +1144,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportsConfig'
+        '404':
+          description: report_config key not yet seeded in DB
+
+  # ── Notifications ─────────────────────────────────────────────────────────────
+
+  /notifications/events:
+    get:
+      tags: [notifications]
+      summary: Server-Sent Events stream for real-time platform events
+      operationId: subscribeNotifications
+      description: >
+        Returns a persistent SSE stream. The server pushes plain-text event messages
+        for facility status changes, BB runs, LP reclassifications, and upload events.
+        Each event arrives as a `data: <message>` line. Keep the connection open;
+        it does not time out under normal operation.
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
 
 # ─────────────────────────────────────────────────────────────────────────────
 # COMPONENTS
@@ -1081,7 +1208,7 @@ components:
 
     FacilityStatus:
       type: string
-      enum: [Not Started, In Progress, Needs Review, Certified, Pending]
+      enum: [Not Started, In Progress, Needs Review, Certified, Pending, Active]
 
     LPClassification:
       type: string
@@ -1163,6 +1290,8 @@ components:
       description: Partial LP update — any subset of mutable LP fields
       properties:
         cls:        { $ref: '#/components/schemas/LPClassification' }
+        clsTag:     { type: string, description: CSS tag class e.g. tag-rated }
+        abb:        { type: string, description: Agent-submitted borrowing base value }
         agentRate:  { type: string }
         agentConc:  { type: string }
         ubsConc:    { type: string }
@@ -1274,7 +1403,7 @@ components:
         pctTop10:           { type: number, description: Top-10 LPs share of total uncalled }
         pctTop20:           { type: number }
         igRatio:            { type: number }
-        pctUncalledGt2M:    { type: number, description: Fraction of uncalled from LPs with >$2M uncalled }
+        pctUncalledGt2M:    { type: number, description: Fraction of LPs with >$2M uncalled }
         # Borrowing Base table
         facilitySize:        { type: number }
         ubsParticipation:    { type: number }
@@ -1294,51 +1423,92 @@ components:
 
     SubmissionStatus:
       type: string
-      enum: [Processing, Review, Processed, Aborted]
+      enum: [Processing, Review, Processed, Aborted, Error]
       description: >
         Processing — extraction and matching running;
         Review — awaiting credit officer action;
         Processed — Shadow BB complete;
-        Aborted — cancelled by user
+        Aborted — cancelled by user;
+        Error — extraction pipeline failed (pe-sub-extraction unreachable)
 
     Submission:
       type: object
       properties:
-        id:           { type: integer }
-        facilityId:   { type: integer }
-        facilityName: { type: string, description: Facility name resolved from facilityId — included in GET /submissions list response }
-        agentBank:    { type: string }
-        periodMonth:  { type: string, description: Date string from the UI e.g. "2026-05-31" }
-        status:       { $ref: '#/components/schemas/SubmissionStatus' }
-        fileName:     { type: string, description: Original filename as uploaded }
-        filePath:     { type: string, nullable: true, description: Absolute server path to the saved file }
-        uploadedBy:   { type: integer, nullable: true, description: FK → users.id }
-        notes:        { type: string, nullable: true, description: Optional analyst notes submitted with the upload }
-        createdAt:    { type: string, format: date-time }
-        updatedAt:    { type: string, format: date-time }
+        id:                  { type: integer }
+        facilityId:          { type: integer }
+        facilityName:        { type: string, description: Facility name resolved from facilityId — included in list response }
+        agentBank:           { type: string }
+        periodMonth:         { type: string, description: Date string from the UI e.g. "2026-05-31" }
+        status:              { $ref: '#/components/schemas/SubmissionStatus' }
+        fileName:            { type: string, description: Original filename as uploaded }
+        uploadedBy:          { type: integer, nullable: true, description: FK → users.id }
+        notes:               { type: string, nullable: true, description: Optional analyst notes submitted with the upload }
+        wizardStep:          { type: integer, description: "Current ingestion wizard step: 1=Uploaded, 3=Extraction Review, 4=Matching Review, 5=Shadow BB" }
+        shadowBbOverrides:   { type: object, nullable: true, description: Per-LP classification/rate overrides set on the Run Shadow BB screen }
+        createdAt:           { type: string, format: date-time }
+        updatedAt:           { type: string, format: date-time }
+
+    ConfirmResponse:
+      type: object
+      description: Response from POST /submissions/{id}/confirm
+      properties:
+        templateSaved:
+          type: boolean
+          description: True if a new BB template was learned for this agent bank
+        agentBank:
+          type: string
+          description: Agent bank name from the submission
 
     ExtractedLP:
       type: object
-      description: Single LP row parsed from the uploaded agent document
+      description: >
+        Single LP row as stored in submission_extractions.extracted_lps JSONB.
+        Field values are pre-formatted strings (e.g. "$28.4M", "65.0%").
       properties:
-        id:              { type: integer }
-        submissionId:    { type: integer }
-        rawName:         { type: string, description: Agent name as it appears in the document }
-        masterName:      { type: string, nullable: true, description: Matched LP Master name }
-        confidence:      { type: number, description: Extraction confidence score 0–1 }
-        fields:          { type: object, additionalProperties: true, description: Extracted field values keyed by canonical field name }
+        id:            { type: integer, description: Sequential row id within this extraction }
+        rowIndex:      { type: integer, description: Zero-based row index in the source spreadsheet }
+        name:          { type: string }
+        agentClass:    { type: string, nullable: true, description: LP classification as stated by agent }
+        commit:        { type: string, nullable: true, description: Formatted capital commitment }
+        uncalled:      { type: string, nullable: true, description: Formatted uncalled capital }
+        aum:           { type: string, nullable: true, description: Formatted AUM }
+        agentRate:     { type: string, nullable: true, description: Formatted advance rate e.g. "65.0%" }
+        agentConc:     { type: string, nullable: true, description: Formatted concentration limit e.g. "10.0%" }
+        conf:          { type: integer, description: Overall extraction confidence 0–100 (average of field confidences) }
+        requiresReview: { type: boolean }
+        agentBBFmt:    { type: string, description: Computed agent BB as formatted string e.g. "$18,500,000" }
+        pctBBFmt:      { type: string, description: This LP's share of total agent BB e.g. "3.42%" }
+        parent:        { type: string, nullable: true }
+        nav:           { type: string, nullable: true }
+        sp:            { type: string, nullable: true }
+        moodys:        { type: string, nullable: true }
+        fitch:         { type: string, nullable: true }
+        transferee:    { type: string, nullable: true }
+        warnings:      { type: array, items: { type: string }, description: Field-level warning messages }
+
+    FieldMapEntry:
+      type: object
+      description: Single column-to-canonical-field mapping entry from the extraction result
+      properties:
+        extracted:  { type: string, description: Column header as it appears in the document }
+        canonical:  { type: string, description: Group-prefixed canonical label e.g. "Commitment Data — UNCALLED" }
+        group:      { type: string, description: LP Master section name e.g. "Commitment Data" }
+        note:       { type: string, description: Match quality note e.g. "Exact match", "Matched via fuzzy similarity", "Matched via alias dictionary" }
+        tier:       { type: string, description: Always "Core" for extraction-sourced mappings }
 
     DocRecognition:
       type: object
-      description: Document recognition metadata from submission_extractions
+      description: Document recognition metadata computed from submission_extractions
       properties:
-        templateFormat:   { type: string, nullable: true, description: "Detected bank format: CITIBANK, JPM, GOLDMAN_SACHS, BARCLAYS, INTERNAL, UNKNOWN" }
-        sheetName:        { type: string, nullable: true, description: Name of the BB sheet extracted from }
-        headerRowIndex:   { type: integer, nullable: true, description: Zero-based header row index in the sheet }
-        totalRows:        { type: integer, description: Total data rows parsed }
-        flaggedCount:     { type: integer, description: Rows with requiresReview=true }
-        fieldMappingCount: { type: integer, description: Number of columns mapped to canonical fields }
-        unrecognizedCount: { type: integer, description: Number of columns not mapped to any canonical field }
+        document:          { type: string, description: Original filename }
+        format:            { type: string, description: Human-readable bank template name e.g. "Excel Workbook — Citibank template" }
+        tablesIdentified:  { type: string, description: Table summary including sheet name e.g. "1 borrowing-base table · Sheet: BB Schedule" }
+        tableLocation:     { type: string, description: Row range of data e.g. "Rows 4–147" }
+        headerRow:         { type: integer, description: One-based header row number }
+        totalRows:         { type: integer, description: Total data rows parsed }
+        mappedColumns:     { type: integer, description: Number of columns matched to canonical fields }
+        unmatchedColumns:  { type: integer, description: Number of columns not matched to any canonical field }
+        headerInfo:        { type: string, description: Human-readable header summary e.g. "Row 3 · 12 columns matched · 2 unmatched" }
 
     # ── Field Mapping ──────────────────────────────────────────────────────────
 
@@ -1388,6 +1558,25 @@ components:
 
     # ── Matching ───────────────────────────────────────────────────────────────
 
+    MatchCandidate:
+      type: object
+      description: Single LP name match candidate with score and recommended action
+      properties:
+        name:   { type: string, description: LP Master name }
+        score:  { type: integer, description: Combined similarity score 0–100 }
+        action: { type: string, enum: [Accept, Queue, Reject], description: Recommended action based on configured thresholds }
+
+    MatchTestResult:
+      type: object
+      description: Result of POST /matching/test
+      properties:
+        input:      { type: string, description: Original input name }
+        normalised: { type: string, description: Name after normalisation (suffix removal, abbreviation expansion) }
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchCandidate'
+
     MatchQueueItem:
       type: object
       properties:
@@ -1396,12 +1585,11 @@ components:
         facilityId:    { type: integer }
         facilityName:  { type: string, description: Facility name resolved for display }
         agentName:     { type: string, description: Extracted investor name from the document }
-        masterName:    { type: string, nullable: true, description: Best-matched LP Master name }
-        score:         { type: number, description: Combined similarity score 0–100 }
-        decision:      { type: string, enum: [pending, accepted, rejected, manual] }
-        masterNameOverride: { type: string, nullable: true, description: Manual name entered by credit officer when decision is manual }
+        masterName:    { type: string, nullable: true, description: Best-matched LP Master name, or masterNameOverride if set }
+        score:         { type: integer, description: Combined similarity score 0–100 }
+        decision:      { type: string, enum: [Pending, Accepted, Rejected, Manual], description: Current decision (capitalised) }
+        status:        { type: string, description: Mirrors decision for UI display }
         isNew:         { type: boolean, description: True if no existing LP Master record matched }
-        status:        { type: string, description: UI status derived from decision — pending / accepted / rejected / manual }
         reasons:       { type: array, items: { type: string }, description: Reasons explaining the queue action (low match score, low extraction confidence, etc.) }
 
     MatchThresholds:
@@ -1441,13 +1629,16 @@ components:
 
     EligibilityConfig:
       type: object
+      description: >
+        Response keys are SCREAMING_SNAKE_CASE matching the DB config key names.
+        Only keys present in the database are included in the response.
       properties:
-        busaTiers:       { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
-        agentTiers:      { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
-        agentRateParams: { type: array, items: { type: object, properties: { label: { type: string }, value: { type: string } } } }
-        eligRules:       { type: array, items: { $ref: '#/components/schemas/EligibilityRule' } }
-        concLimits:      { type: array, items: { type: object, additionalProperties: true } }
-        globalSettings:  { type: array, items: { type: object, additionalProperties: true } }
+        BUSA_TIERS:       { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
+        AGENT_TIERS:      { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
+        AGENT_RATE_PARAMS: { type: array, items: { type: object, properties: { label: { type: string }, value: { type: string } } } }
+        ELIG_RULES:       { type: array, items: { $ref: '#/components/schemas/EligibilityRule' } }
+        CONC_LIMITS:      { type: array, items: { type: object, additionalProperties: true } }
+        GLOBAL_SETTINGS:  { type: array, items: { type: object, additionalProperties: true } }
 
     CalcMode:
       type: object
@@ -1496,7 +1687,19 @@ components:
 
     AuditEvent:
       type: string
-      enum: [BB Recalculated, LP Reclassified, Upload, Export, Config Change, Login, Field Mapping Change]
+      enum:
+        - BB Recalculated
+        - LP Reclassified
+        - LP Data Updated
+        - Upload
+        - Export
+        - Config Change
+        - Match Config Change
+        - Login
+        - Field Mapping Change
+        - Abort
+        - Re-extraction
+        - Extraction Confirmed
       description: Controlled vocabulary of audit event types
 
     AuditRow:
@@ -1520,8 +1723,14 @@ components:
             Human-readable event detail. Format varies by event type:
             BB Recalculated — "N LPs · UBS BB $X.XM";
             LP Reclassified — "LP Name → NewCls (was OldCls)";
+            LP Data Updated — "N LP records updated from FORMAT extraction";
             Upload — "periodMonth · fileName · agentBank";
-            Login — "User login"
+            Login — "User login";
+            Abort — "Submission #N aborted";
+            Re-extraction — "Submission #N re-extracted";
+            Extraction Confirmed — "Submission #N extraction confirmed";
+            Field Mapping Change — "FM Alias Added/Removed/Updated: ...";
+            Config Change / Match Config Change — "<section label> updated"
           example: '1,492 LPs · UBS BB $183.9M'
         facility:
           type: string
@@ -1594,7 +1803,22 @@ components:
               properties:
                 format:
                   type: string
-                  enum: [CITIBANK, JPM, GOLDMAN_SACHS, BARCLAYS, INTERNAL, UNKNOWN]
+                  enum:
+                    - CITIBANK
+                    - JPM
+                    - GOLDMAN_SACHS
+                    - BARCLAYS
+                    - BANK_OF_AMERICA
+                    - WELLS_FARGO
+                    - CITIZENS_FINANCIAL
+                    - PNC_BANK
+                    - FIFTH_THIRD
+                    - HUNTINGTON
+                    - WHITE_OAK
+                    - ARES
+                    - MIDCAP_FINANCIAL
+                    - INTERNAL
+                    - UNKNOWN
                 version:        { type: string, nullable: true }
                 headerRowIndex: { type: integer }
             records:

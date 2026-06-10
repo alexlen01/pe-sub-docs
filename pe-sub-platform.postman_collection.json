@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.6.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.7.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -193,7 +193,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"cls\": \"Rated\",\n  \"clsTag\": \"S&P BB\",\n  \"abb\": \"N\",\n  \"inc\": true,\n  \"rcl\": false,\n  \"notes\": \"Reviewed by credit committee Q2 2026\"\n}",
+                  "raw": "{\n  \"cls\": \"Rated\",\n  \"clsTag\": \"tag-rated\",\n  \"abb\": \"$22.5M\",\n  \"inc\": true,\n  \"rcl\": false,\n  \"notes\": \"Reviewed by credit committee Q2 2026\"\n}",
                   "options": { "raw": { "language": "json" } }
                 },
                 "url": {
@@ -280,7 +280,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "bb", "summary-ext", "{{facilityId}}"]
                 },
-                "description": "Extended analytics: concentration breaches, call rate, BB comparison against prior snapshot."
+                "description": "Extended analytics: LP portfolio stats, BB comparison, BUSA/agent rate breakdown, classification breakdown. Returns zero-valued object when no LPs exist."
               },
               "response": []
             }
@@ -318,7 +318,7 @@
               "response": []
             },
             {
-              "name": "EAR report",
+              "name": "[PLANNED] EAR report",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -327,7 +327,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "reports", "ear", "{{facilityId}}"]
                 },
-                "description": "Effective Advance Rate history — array of { calculatedAt, ear, agentEar, earDelta } data points across all BB snapshots."
+                "description": "[PLANNED — returns 404] Effective Advance Rate history — array of { calculatedAt, ear, agentEar, earDelta } data points across all BB snapshots."
               },
               "response": []
             }
@@ -345,7 +345,8 @@
                   "raw": "{{base}}/api/submissions",
                   "host": ["{{base}}"],
                   "path": ["api", "submissions"]
-                }
+                },
+                "description": "Returns all submissions ordered newest first. Submissions with status=Processing are filtered out."
               },
               "response": []
             },
@@ -374,7 +375,7 @@
                   "mode": "formdata",
                   "formdata": [
                     { "key": "facilityId",   "value": "{{facilityId}}", "type": "text" },
-                    { "key": "agentBank",    "value": "Citibank",       "type": "text", "description": "Citibank | JPMorgan | Goldman Sachs | Barclays | UBS" },
+                    { "key": "agentBank",    "value": "Citibank",       "type": "text", "description": "Citibank | JPMorgan | Goldman Sachs | Barclays | Bank of America | Wells Fargo | UBS" },
                     { "key": "periodMonth",  "value": "2026-05-31",     "type": "text", "description": "YYYY-MM-DD" },
                     { "key": "file",         "src": "",                 "type": "file", "description": "XLSX, XLS, or CSV (max 50 MB)" },
                     { "key": "notes",        "value": "",               "type": "text", "description": "Optional analyst notes", "disabled": true }
@@ -385,7 +386,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions"]
                 },
-                "description": "Multipart upload. Triggers pe-sub-extraction immediately. Returns submission metadata with status=Review when extraction succeeds."
+                "description": "Multipart upload. Triggers pe-sub-extraction immediately. Returns 201 with submission metadata (wizardStep=1, status=Processing). Status advances to Review once extraction completes."
               },
               "response": []
             },
@@ -412,7 +413,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "abort"]
                 },
-                "description": "Deletes the submission_extractions row and resets facility status. Returns updated submission with status=Aborted."
+                "description": "Deletes the uploaded file, submission_extractions row, and match queue entries. Resets facility status if no other active submissions. Returns 204 No Content on success. Returns 409 if already Processed or already Aborted."
               },
               "response": []
             },
@@ -426,7 +427,26 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "confirm"]
                 },
-                "description": "Marks submission as Processed. Auto-learns BB template (sheet name + header row) for the agent bank if not already stored."
+                "description": "Advances submission to wizardStep=4. Auto-learns BB template (sheet name + header row) for the agent bank on first confirmation. (Re)builds match_queue_entries from the extracted LP rows. Returns { templateSaved: boolean, agentBank: string }."
+              },
+              "response": []
+            },
+            {
+              "name": "Save Shadow BB state",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"overrides\": {\n    \"42\": { \"cls\": \"Rated\", \"agentRate\": \"90%\" }\n  }\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/shadow-bb-state",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "shadow-bb-state"]
+                },
+                "description": "Advances submission to wizardStep=5. Optionally persists per-LP classification/rate overrides (keyed by LP id) in shadow_bb_overrides. Called on 'Commit Decisions' (no overrides) and on 'Save' (with overrides) on the Run Shadow BB screen. Returns updated Submission."
               },
               "response": []
             },
@@ -440,7 +460,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "extracted-lps"]
                 },
-                "description": "Returns the extracted_lps JSONB from submission_extractions — array of ExtractedLpRecord with per-field confidence scores."
+                "description": "Returns the extracted_lps JSONB from submission_extractions — array of formatted LP rows with per-row confidence scores and computed agentBBFmt/pctBBFmt fields."
               },
               "response": []
             },
@@ -454,7 +474,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "field-map"]
                 },
-                "description": "Returns a labelled field map: extracted column header → canonical LP Master field + group, for all recognised columns."
+                "description": "Returns an array of { extracted, canonical, group, note, tier } entries — one per recognised column. Used to render the column mapping review table."
               },
               "response": []
             },
@@ -468,7 +488,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "doc-recognition"]
                 },
-                "description": "Returns document recognition metadata: template format, sheet name, header row index, total rows, flagged count, field mapping count, unrecognized count."
+                "description": "Returns: { document, format, tablesIdentified, tableLocation, headerRow, totalRows, mappedColumns, unmatchedColumns, headerInfo }."
               },
               "response": []
             },
@@ -493,7 +513,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"extractedKey\": \"Unfunded Commitment\",\n  \"canonicalKey\": \"UNCALLED\"\n}",
+                  "raw": "{\n  \"extractedHeader\": \"Unfunded Commitment\",\n  \"canonical\": \"UNCALLED\"\n}",
                   "options": { "raw": { "language": "json" } }
                 },
                 "url": {
@@ -501,7 +521,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "remap"]
                 },
-                "description": "Maps an unrecognised column header to a canonical LP field. Follow with a reextract call to apply the mapping."
+                "description": "Saves a User-tier alias (extractedHeader → canonical) then immediately re-extracts. Returns 200 OK on success. Returns 502 if alias saved but pe-sub-extraction is unreachable — retry with POST /reextract."
               },
               "response": []
             },
@@ -515,7 +535,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "submissions", "{{submissionId}}", "reextract"]
                 },
-                "description": "Re-runs the full extraction pipeline using the stored file plus any saved column remappings and BB template hints for the agent bank."
+                "description": "Re-runs the full extraction pipeline using the stored file plus any saved column remappings and BB template hints for the agent bank. Returns 204 No Content on success. Returns 502 if pe-sub-extraction is unreachable."
               },
               "response": []
             }
@@ -612,7 +632,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "field-mapping", "aliases"]
                 },
-                "description": "tier: Bank | System | User"
+                "description": "tier: Core | Bank | User. Returns 409 Conflict if the alias text is already mapped to another canonical field."
               },
               "response": []
             },
@@ -630,7 +650,8 @@
                   "raw": "{{base}}/api/field-mapping/aliases/{{aliasId}}",
                   "host": ["{{base}}"],
                   "path": ["api", "field-mapping", "aliases", "{{aliasId}}"]
-                }
+                },
+                "description": "Returns 409 Conflict if the new text is already mapped to another canonical field."
               },
               "response": []
             },
@@ -667,7 +688,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "matching", "test"]
                 },
-                "description": "Runs fuzzy LP name matching (Jaro-Winkler + Levenshtein) against all LPs. Returns ranked matches with scores."
+                "description": "Runs fuzzy LP name matching (Jaro-Winkler + Levenshtein) against all LP names. Returns { input, normalised, matches: [{ name, score, action }] } where action is Accept | Queue | Reject."
               },
               "response": []
             },
@@ -681,10 +702,10 @@
                   "host": ["{{base}}"],
                   "path": ["api", "matching", "queue"],
                   "query": [
-                    { "key": "submissionId", "value": "{{submissionId}}", "description": "Filter by submission" }
+                    { "key": "submissionId", "value": "{{submissionId}}", "description": "Optional: filter by submission. Omit to return all queue entries." }
                   ]
                 },
-                "description": "Returns match_queue_entries for the given submission — one row per extracted LP that was queued for credit officer review."
+                "description": "Returns match_queue_entries for the given submission — one row per extracted LP queued for credit officer review."
               },
               "response": []
             },
@@ -703,12 +724,12 @@
                   "host": ["{{base}}"],
                   "path": ["api", "matching", "queue", "{{matchQueueItemId}}"]
                 },
-                "description": "decision: accepted | rejected | manual. When decision=manual, also provide masterName with the correct LP name."
+                "description": "decision: accepted | rejected | manual (case-insensitive; stored capitalised). When masterName is provided and non-blank, the override is set and decision is forced to Accepted."
               },
               "response": []
             },
             {
-              "name": "Get matching thresholds",
+              "name": "[PLANNED] Get matching thresholds",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -717,12 +738,12 @@
                   "host": ["{{base}}"],
                   "path": ["api", "matching", "thresholds"]
                 },
-                "description": "Returns current autoAccept and reviewQueue score thresholds from matching_config."
+                "description": "[PLANNED] Use GET /api/config/matching instead — thresholds are stored under matching_config."
               },
               "response": []
             },
             {
-              "name": "Update matching thresholds",
+              "name": "[PLANNED] Update matching thresholds",
               "request": {
                 "method": "PATCH",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -735,7 +756,8 @@
                   "raw": "{{base}}/api/matching/thresholds",
                   "host": ["{{base}}"],
                   "path": ["api", "matching", "thresholds"]
-                }
+                },
+                "description": "[PLANNED] Use PUT /api/config/matching instead."
               },
               "response": []
             }
@@ -754,7 +776,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "config", "eligibility"]
                 },
-                "description": "Returns all 6 eligibility config keys (busa_tiers, agent_tiers, agent_rate_params, elig_rules, conc_limits, global_settings) assembled from the in-memory cache."
+                "description": "Returns all 6 eligibility config keys assembled from the DB cache. Response keys are SCREAMING_SNAKE_CASE: BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS. Returns 404 if no keys seeded."
               },
               "response": []
             },
@@ -773,7 +795,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "config", "eligibility"],
                   "query": [
-                    { "key": "section", "value": "busa_tiers", "description": "Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | global_settings" }
+                    { "key": "section", "value": "busa_tiers", "description": "Required. Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | global_settings" }
                   ]
                 },
                 "description": "Upserts a single config key. The ?section= param appears in the audit log detail. Body is the new JSON value for the key."
@@ -790,14 +812,14 @@
                   "host": ["{{base}}"],
                   "path": ["api", "config", "matching"]
                 },
-                "description": "Returns matching_config from cache: autoAccept, reviewQueue, jwWeight, levWeight, legalSuffixes, knownAbbreviations."
+                "description": "Returns matching_config from DB cache: defaultThresholds (autoAccept, reviewQueue), legalSuffixes, knownAbbreviations, abbrevRegexMap. Returns 404 if not seeded."
               },
               "response": []
             },
             {
               "name": "Update matching config",
               "request": {
-                "method": "PATCH",
+                "method": "PUT",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
@@ -805,13 +827,14 @@
                   "options": { "raw": { "language": "json" } }
                 },
                 "url": {
-                  "raw": "{{base}}/api/config/matching?section=Confidence+Thresholds",
+                  "raw": "{{base}}/api/config/matching?section=thresholds",
                   "host": ["{{base}}"],
                   "path": ["api", "config", "matching"],
                   "query": [
-                    { "key": "section", "value": "Confidence Thresholds", "description": "Appears in the audit log detail" }
+                    { "key": "section", "value": "thresholds", "description": "Optional label for audit log: thresholds | weights | suffixes | abbreviations" }
                   ]
-                }
+                },
+                "description": "Replaces the full matching_config value. The ?section= param is used only in the audit log detail. Writes a 'Match Config Change' audit event."
               },
               "response": []
             }
@@ -828,11 +851,9 @@
                 "url": {
                   "raw": "{{base}}/api/audit",
                   "host": ["{{base}}"],
-                  "path": ["api", "audit"],
-                  "query": [
-                    { "key": "facilityId", "value": "{{facilityId}}", "disabled": true, "description": "Optional: filter by facility" }
-                  ]
-                }
+                  "path": ["api", "audit"]
+                },
+                "description": "Returns all audit rows ordered newest first. Each row: { ts, event, detail, facility, user, ip }."
               },
               "response": []
             },
@@ -840,17 +861,13 @@
               "name": "Record login event",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"username\": \"J. Smith\",\n  \"role\": \"Credit Officer\"\n}",
-                  "options": { "raw": { "language": "json" } }
-                },
+                "header": [],
                 "url": {
                   "raw": "{{base}}/api/audit/login",
                   "host": ["{{base}}"],
                   "path": ["api", "audit", "login"]
-                }
+                },
+                "description": "No request body needed. Writes a Login audit event with the client IP. User is hardcoded to 'J. Smith' pending auth integration."
               },
               "response": []
             }
@@ -869,7 +886,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "notifications", "events"]
                 },
-                "description": "Server-Sent Events stream. Broadcasts facility status changes, BB runs, LP reclassifications, and upload events in real time. Keep the connection open; events arrive as 'data: ...' lines. Note: Postman supports SSE via the 'Send' button; Talend does not."
+                "description": "Server-Sent Events stream. Broadcasts facility status changes, BB runs, LP reclassifications, and upload events in real time. Keep the connection open; events arrive as 'data: ...' lines. Note: Postman supports SSE via the 'Send' button."
               },
               "response": []
             }
@@ -923,7 +940,7 @@
     },
     {
       "name": "Planned — Not Yet Implemented",
-      "description": "Endpoints not yet implemented. Requests will return 404 until live. Sync source: pe-sub-docs/openapi.yaml v0.6.0.",
+      "description": "Endpoints not yet implemented. Requests will return 404 until live. Sync source: pe-sub-docs/openapi.yaml v0.7.0.",
       "item": [
         {
           "name": "[PLANNED] Config — classification",
@@ -939,40 +956,14 @@
           "response": []
         },
         {
-          "name": "[PLANNED] Config — wizard",
+          "name": "[PLANNED] Reports — EAR",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base}}/api/config/wizard",
+              "raw": "{{base}}/api/reports/ear/{{facilityId}}",
               "host": ["{{base}}"],
-              "path": ["api", "config", "wizard"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Config — audit settings",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/config/audit",
-              "host": ["{{base}}"],
-              "path": ["api", "config", "audit"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Config — reports settings",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/config/reports",
-              "host": ["{{base}}"],
-              "path": ["api", "config", "reports"]
+              "path": ["api", "reports", "ear", "{{facilityId}}"]
             }
           },
           "response": []

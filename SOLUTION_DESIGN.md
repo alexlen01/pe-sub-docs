@@ -16,7 +16,7 @@
 | `pe-sub-extraction` | Spring Boot 3.5 / Java 21 document extraction service — parses XLSX/CSV agent schedules, returns structured LP records to `pe-sub-api`; maintains BB template registry |
 | `pe-sub-jobs` | Spring Boot 3.5 / Java 21 background jobs service — scheduled recalculations and async processing (skeleton; no jobs implemented yet) |
 | `pe-sub-infra` | Kubernetes manifests for local cluster (Docker Desktop / Rancher Desktop) and managed Kubernetes deployment |
-| `pe-sub-docs` | Solution design, OpenAPI specification (`openapi.yaml` v0.6.0), and Postman/Talend API collection |
+| `pe-sub-docs` | Solution design, OpenAPI specification (`openapi.yaml` v0.7.0), and Postman/Talend API collection |
 | `pe-sub-platform` | Working prototype only — used to gather and refine requirements; not deployed to production |
 
 ### Decision: flat repos, not a monorepo
@@ -183,7 +183,7 @@ One row per submission; unique index on `submission_id`.
 |--------|------|-------|
 | id | serial PK | |
 | submission_id | integer FK → submissions unique | |
-| template_format | varchar(50) nullable | Detected bank format: `CITIBANK`, `JPM`, `GOLDMAN_SACHS`, `BARCLAYS`, `INTERNAL`, `UNKNOWN` |
+| template_format | varchar(50) nullable | Detected bank format: `CITIBANK`, `JPM`, `GOLDMAN_SACHS`, `BARCLAYS`, `BANK_OF_AMERICA`, `WELLS_FARGO`, `CITIZENS_FINANCIAL`, `PNC_BANK`, `FIFTH_THIRD`, `HUNTINGTON`, `WHITE_OAK`, `ARES`, `MIDCAP_FINANCIAL`, `INTERNAL`, `UNKNOWN` |
 | template_version | varchar(50) nullable | Reserved for future versioning |
 | sheet_name | varchar(255) nullable | Name of the BB sheet extracted from |
 | header_row_index | integer nullable | Zero-based header row index in the sheet |
@@ -230,7 +230,7 @@ Auto-learned template registry keyed by agent bank. On first confirmed extractio
 | Column | Type | Notes |
 |--------|------|-------|
 | id | serial PK | |
-| event | varchar(100) | Not null. One of: `BB Recalculated`, `LP Reclassified`, `LP Data Updated`, `Upload`, `Export`, `Config Change`, `Login`, `Field Mapping Change` |
+| event | varchar(100) | Not null. One of: `BB Recalculated`, `LP Reclassified`, `LP Data Updated`, `Upload`, `Export`, `Config Change`, `Match Config Change`, `Login`, `Field Mapping Change`, `Abort`, `Re-extraction`, `Extraction Confirmed` |
 | detail | text nullable | Human-readable event detail; format varies by event type (see §5 Audit) |
 | facility_id | integer FK → facilities nullable | Null for non-facility-scoped events (e.g. Login, Config Change) |
 | user_id | integer FK → users nullable | Reserved for auth integration; not yet populated |
@@ -244,9 +244,9 @@ Writers:
 
 - **BbController** — inserts `BB Recalculated` on every `POST /api/bb/run/:facilityId`
 - **LpController** — inserts `LP Reclassified` when `cls` changes on `PATCH /api/lps/:id`; inserts `LP Data Updated` when `POST /api/lps/ingest` updates at least one LP record
-- **SubmissionController** — inserts `Upload` on every `POST /api/submissions`
+- **SubmissionController** — inserts `Upload` on every `POST /api/submissions`; `Abort` on `POST /:id/abort`; `Re-extraction` on `POST /:id/reextract`; `Extraction Confirmed` on `POST /:id/confirm`; `Field Mapping Change` on `POST /:id/remap` (when a new alias is created)
 - **AuditController** — inserts `Login` on `POST /api/audit/login` (called by UI on app mount)
-- **ConfigController** — inserts `Config Change` on every `PUT /api/config/matching` and `PUT /api/config/eligibility`; detail names the specific section
+- **ConfigController** — inserts `Config Change` on `PUT /api/config/eligibility`; inserts `Match Config Change` on `PUT /api/config/matching`; detail names the specific section in both cases
 - **FieldMappingController** — inserts `Field Mapping Change` on alias mutations
 
 All writers record `user_name = "J. Smith"` (hardcoded pending auth) and resolve IP via `X-Forwarded-For` → `remoteAddr`.
@@ -260,7 +260,11 @@ All writers record `user_name = "J. Smith"` (hardcoded pending auth) and resolve
 | LP Data Updated | `N LP records updated from <TEMPLATE_FORMAT> extraction` |
 | Upload | `periodMonth · fileName · agentBank` |
 | Login | `User login` |
-| Config Change | `<Section> updated` — matching sections: `Confidence Thresholds`, `Algorithm Weights`, `Legal Entity Suffix Rules`, `Abbreviation Expansion Dictionary`; eligibility sections: `BUSA Advance Rate Schedule`, `Agent Advance Rate Schedule`, `Agent Rate Parameters`, `Eligibility Rules`, `Concentration Limits`, `Global Settings` |
+| Abort | `Submission #N aborted` |
+| Re-extraction | `Submission #N re-extracted` |
+| Extraction Confirmed | `Submission #N extraction confirmed` |
+| Config Change | `<Section> updated` — eligibility sections: `BUSA Advance Rate Schedule`, `Agent Advance Rate Schedule`, `Agent Rate Parameters`, `Eligibility Rules`, `Concentration Limits`, `Global Settings` |
+| Match Config Change | `<Section> updated` — matching sections: `Confidence Thresholds`, `Algorithm Weights`, `Legal Entity Suffix Rules`, `Abbreviation Expansion Dictionary` |
 | Field Mapping Change | `FM Alias Added: "<text>" → <canonical>` / `FM Alias Removed: "<text>"` / `FM Alias Updated: "<old>" → "<new>"` |
 
 ### `config`
@@ -294,7 +298,7 @@ Platform configuration — advance rates, eligibility rules, concentration limit
 
 ## 5. API Routes
 
-Base path: `/api`. Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml` v0.6.0.  
+Base path: `/api`. Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml` v0.7.0.  
 API test collection: `pe-sub-docs/pe-sub-platform.postman_collection.json` (Postman v2.1; imports into Talend API Tester).
 
 **Status legend:** ✅ implemented · 🔲 planned
@@ -344,23 +348,24 @@ Writes an `LP Data Updated` audit event when at least one LP is updated.
 |--------|------|--------|-------------|
 | GET | `/api/reports/collateral/:facilityId` | ✅ | Latest snapshot summary (Collateral & Coverage) |
 | GET | `/api/reports/concentration/:facilityId` | ✅ | Latest breach list (Concentration Exposures) |
-| GET | `/api/reports/ear/:facilityId` | ✅ | Effective Advance Rate history across all snapshots |
+| GET | `/api/reports/ear/:facilityId` | 🔲 | Effective Advance Rate history across all snapshots |
 
 ### Submissions
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
-| GET | `/api/submissions` | ✅ | List all submissions; filter by `?facilityId=`; ordered newest first |
+| GET | `/api/submissions` | ✅ | List all submissions; filter by `?facilityId=`; ordered newest first; `Processing` status filtered out |
 | POST | `/api/submissions` | ✅ | Create submission — multipart: `facilityId`, `agentBank`, `periodMonth`, `file`, `notes?`; triggers `pe-sub-extraction` immediately; saves file to `${app.uploads.path}` |
 | GET | `/api/submissions/:id` | ✅ | Single submission record or 404 |
-| POST | `/api/submissions/:id/abort` | ✅ | Abort a submission — deletes `submission_extractions` row, resets facility status |
-| POST | `/api/submissions/:id/confirm` | ✅ | Confirm extraction; auto-learns BB template for the agent bank via `bb_templates` |
-| GET | `/api/submissions/:id/extracted-lps` | ✅ | Extracted LP rows with confidence scores (from `submission_extractions.extracted_lps` JSONB) |
-| GET | `/api/submissions/:id/field-map` | ✅ | Column → canonical field mapping for this submission |
-| GET | `/api/submissions/:id/doc-recognition` | ✅ | Document recognition metadata (format, sheet name, header row, row counts) |
+| POST | `/api/submissions/:id/abort` | ✅ | Abort — deletes file, `submission_extractions` row, match queue entries; resets facility status if no other active submissions. **204 No Content**; **409** if already Processed or Aborted |
+| POST | `/api/submissions/:id/confirm` | ✅ | Advances to `wizardStep=4`; auto-learns BB template for the agent bank; rebuilds `match_queue_entries`. Returns `{ templateSaved: boolean, agentBank: string }` |
+| PATCH | `/api/submissions/:id/shadow-bb-state` | ✅ | Advances to `wizardStep=5`; persists `shadow_bb_overrides` (LP classification/rate overrides). Body: `{ overrides?: object }`. Returns updated `Submission` |
+| GET | `/api/submissions/:id/extracted-lps` | ✅ | Formatted LP rows from `submission_extractions.extracted_lps` JSONB — includes `agentBBFmt`, `pctBBFmt`, `conf` (0–100) |
+| GET | `/api/submissions/:id/field-map` | ✅ | Array of `{ extracted, canonical, group, note, tier }` — one per recognised column |
+| GET | `/api/submissions/:id/doc-recognition` | ✅ | `{ document, format, tablesIdentified, tableLocation, headerRow, totalRows, mappedColumns, unmatchedColumns, headerInfo }` |
 | GET | `/api/submissions/:id/unrecognized-columns` | ✅ | Column headers that could not be mapped to any canonical field |
-| POST | `/api/submissions/:id/remap` | ✅ | Map an unrecognised column to a canonical field (`{ extractedKey, canonicalKey }`) |
-| POST | `/api/submissions/:id/reextract` | ✅ | Re-run the full extraction pipeline for this submission using the stored file |
+| POST | `/api/submissions/:id/remap` | ✅ | Body: `{ extractedHeader, canonical }`. Creates a User-tier alias then immediately re-extracts. **200** on success; **502** if alias saved but extraction unreachable |
+| POST | `/api/submissions/:id/reextract` | ✅ | Re-runs the full extraction pipeline. **204 No Content**; **502** if `pe-sub-extraction` unreachable |
 
 ### Audit
 
@@ -406,11 +411,11 @@ Template format is auto-detected from keywords in the first 5 rows. Header row i
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
-| POST | `/api/matching/test` | ✅ | Test a name against LP Master. Body: `{ "name": "..." }`. Returns top 10 LP matches scored by Jaro-Winkler + Levenshtein |
-| GET | `/api/matching/queue` | ✅ | Name-matching queue for a submission (`?submissionId=`) |
-| PATCH | `/api/matching/queue/:id` | ✅ | Accept / reject / manual-override a match decision |
-| GET | `/api/matching/thresholds` | ✅ | Current auto-accept and review-queue score thresholds |
-| PATCH | `/api/matching/thresholds` | ✅ | Update thresholds |
+| POST | `/api/matching/test` | ✅ | Body: `{ name }`. Returns `{ input, normalised, matches: [{ name, score, action }] }` — all LP names scored by Jaro-Winkler + Levenshtein |
+| GET | `/api/matching/queue` | ✅ | Match queue; `?submissionId=` optional — omit to return all entries |
+| PATCH | `/api/matching/queue/:id` | ✅ | Body: `{ decision?, masterName? }`. Decision stored capitalised (`Accepted`/`Rejected`/`Manual`). `masterName` sets override and forces `Accepted` |
+| GET | `/api/matching/thresholds` | 🔲 | Use `GET /api/config/matching` instead |
+| PATCH | `/api/matching/thresholds` | 🔲 | Use `PUT /api/config/matching` instead |
 
 **Matching algorithm (`MatchingService`):** Jaro-Winkler + Levenshtein, combined as `jwWeight × JW + levWeight × Lev`. Both strings are normalised before scoring: abbreviation expansion → case fold → legal suffix stripping → punctuation removal. All parameters are read live from `matching_config` in the DB cache.
 
@@ -418,13 +423,19 @@ Template format is auto-detected from keywords in the first 5 rows. Header row i
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
-| GET | `/api/config/eligibility` | ✅ | Returns all 6 eligibility keys assembled from the in-memory cache |
-| PUT | `/api/config/eligibility` | ✅ | Upserts a single config key; `?section=<key>` param used for audit log detail |
-| GET | `/api/config/matching` | ✅ | Returns `matching_config` from cache |
-| PATCH | `/api/config/matching` | ✅ | Upserts `matching_config`; `?section=` param for audit detail |
-| GET | `/api/config/wizard` | 🔲 | No `wizard_config` row seeded — returns 404; UI falls back to `wizardConfig.ts` |
-| GET | `/api/config/audit` | 🔲 | No `audit_config` row seeded — returns 404; UI falls back to `auditConfig.ts` |
-| GET | `/api/config/reports` | 🔲 | No `report_config` row seeded — returns 404; UI falls back to `reportConfig.ts` |
+| GET | `/api/config/eligibility` | ✅ | Returns all 6 eligibility keys from DB cache. Response keys are `SCREAMING_SNAKE_CASE`: `BUSA_TIERS`, `AGENT_TIERS`, `AGENT_RATE_PARAMS`, `ELIG_RULES`, `CONC_LIMITS`, `GLOBAL_SETTINGS` |
+| PUT | `/api/config/eligibility` | ✅ | Upserts a single config key; `?section=<key>` required; writes `Config Change` audit event |
+| GET | `/api/config/matching` | ✅ | Returns `matching_config` from DB cache |
+| PUT | `/api/config/matching` | ✅ | Replaces `matching_config`; `?section=` optional label for audit detail; writes `Match Config Change` audit event |
+| GET | `/api/config/wizard` | ✅ | Implemented; returns 404 until `wizard_config` row is seeded. UI falls back to `wizardConfig.ts` |
+| GET | `/api/config/audit` | ✅ | Implemented; returns 404 until `audit_config` row is seeded. UI falls back to `auditConfig.ts` |
+| GET | `/api/config/reports` | ✅ | Implemented; returns 404 until `report_config` row is seeded. UI falls back to `reportConfig.ts` |
+
+### Notifications
+
+| Method | Path | Status | Description |
+|--------|------|--------|-------------|
+| GET | `/api/notifications/events` | ✅ | SSE stream (`text/event-stream`). Broadcasts facility status changes, BB runs, LP reclassifications, and upload events. Keep-alive; no timeout under normal operation |
 
 ---
 
@@ -441,7 +452,7 @@ Reports screen tabs correspond 1:1 to Step 6 outputs:
 | Step 6 Output | Tab ID | API endpoint | Status |
 |---------------|--------|--------------|--------|
 | Collateral Market Value & Coverage | `collateral` | `/api/reports/collateral/:id` | ✅ |
-| Effective Advance Rates | `ear` | `/api/reports/ear/:id` | ✅ |
+| Effective Advance Rates | `ear` | `/api/reports/ear/:id` | 🔲 |
 | Agent Bank Exposure | `agent-bank` | TBD | 🔲 |
 | Concentration Exposures | `concentration` | `/api/reports/concentration/:id` | ✅ |
 | Ad Hoc Reporting | `adhoc` | TBD | 🔲 |

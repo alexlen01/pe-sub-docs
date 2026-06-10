@@ -7,7 +7,7 @@ Architecture documentation and API specification for the PE Sub Borrowing Base P
 | File | Description |
 |---|---|
 | `SOLUTION_DESIGN.md` | Living architecture document — repositories, tech stack, schema, API routes, design decisions |
-| `openapi.yaml` | OpenAPI 3.0 specification for `pe-sub-api` (v0.6.0) |
+| `openapi.yaml` | OpenAPI 3.0 specification for `pe-sub-api` (v0.7.0) |
 | `pe-sub-platform.postman_collection.json` | Postman v2.1 collection — imports into Talend API Tester |
 | `PE-Sub-Platform-Solution-Design.docx` | Point-in-time Word export — `SOLUTION_DESIGN.md` is the canonical reference |
 
