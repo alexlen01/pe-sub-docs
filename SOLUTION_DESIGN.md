@@ -113,7 +113,7 @@ To make a schema change: add a new `V1_3__description.sql` (or `V2_1__` for the 
 | id | serial PK | |
 | email | varchar(255) unique | |
 | name | varchar(255) | |
-| role | varchar(50) | `Analyst` \| `Credit Officer` \| `Supervisor` |
+| role | varchar(50) | `Credit Administrator` \| `Supervisor` |
 | created_at | timestamp | |
 
 ### `facilities`
@@ -479,6 +479,7 @@ One system-managed job planned: runs on the 1st of each month, resets all active
 | 24 | Re-extraction on every Map or Discard action | After mapping or discarding an unrecognised column in the ExtractionPreview screen, the UI automatically calls `POST /{id}/reextract` → `GET /{id}/extracted-lps` before re-rendering. No manual Re-extract button |
 | 25 | Null-marker filtering at two levels | N/A, N/R, NA, NR values are filtered at extraction time: (a) row-level — entire row skipped if investor name is a null marker; (b) field-level — cell value stored as null with a "value missing" warning |
 | 26 | `CANONICAL_META` in SubmissionController for field-map labelling | A static map in `SubmissionController.java` keys extraction_key or canonical name to `(canonical, group)`. Used to label field-map rows returned by `GET /{id}/field-map`. Non-extractable fields are keyed by canonical name; extractable fields by extraction_key. Without this map, matched fields appeared in group "Other" |
+| 27 | Two-role RBAC: Credit Administrator and Supervisor | Consolidated from three roles (Credit Officer, Supervisor, Admin). Credit Administrator absorbs all Credit Officer day-to-day operations and all Admin system configuration actions (Configuration Studio, Match Thresholds, Field Mapping, User Management). Supervisor retains escalation authority: override any active workflow step regardless of ownership, reassign submission ownership, full cross-facility audit trail, and LP classification override on non-owned submissions. Configuration edits are Credit Administrator-only; Supervisor has view-only access to configuration. See `pe-sub-platform/docs/RBAC_ROLES.md` for the full permission matrix and Supervisor-specific action definitions |
 
 ---
 
