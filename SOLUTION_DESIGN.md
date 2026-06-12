@@ -102,10 +102,14 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 | File | Contents |
 |------|----------|
 | `V1_1__schema.sql` | All DDL — every `CREATE TABLE` and index |
-| `V1_2__seed.sql` | Field Mapping Dictionary seed data (`fm_canonical_fields`, `fm_aliases`, `fm_blocklist`) |
+| `V1_2__seed.sql` | Config seed: `busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`; FM Dictionary seed (`fm_canonical_fields`, `fm_aliases`, `fm_blocklist`) |
 | `V1_3__shadow_bb_state.sql` | `ALTER TABLE submissions ADD COLUMN wizard_step INTEGER NOT NULL DEFAULT 1, ADD COLUMN shadow_bb_overrides JSONB` |
+| `V1_4__lp_rates.sql` | `CREATE TABLE lp_rates` (LP rates feed); UPDATE `agent_tiers` config to 5-tier scale matching BUSA (90 / 75 / 65 / 50 / 0) |
+| `V1_5__lp_rates_seed.sql` | Simulated LP rates (effective 2025-01-01) seeded from existing `lps.cls` values |
+| `V1_7__facility_seed.sql` | *(planned)* `ALTER TABLE facilities ADD COLUMN account_number, loan_amount, maturity_date, bank_status, bank_status_date`; INSERT all 71 facility rows from Agent Bank Summary (Decision 30, 41) |
+| `V1_8__fm_alias_seed.sql` | *(planned)* Bank-scoped FM Dictionary aliases for GOLDMAN_SACHS, WELLS_FARGO, SILICON_VALLEY_BANK (Decision 42; §10.2–10.4) |
 
-To make a schema change: add a new `V1_4__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`.
+To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`.
 
 ### `users`
 
@@ -123,11 +127,16 @@ To make a schema change: add a new `V1_4__description.sql` (or `V2_1__` for the 
 |--------|------|-------|
 | id | serial PK | |
 | name | varchar(255) unique | |
-| agent_bank | varchar(255) | |
-| status | varchar(50) | `Not Started` \| `In Progress` \| `Needs Review` \| `Certified` \| `Pending` |
+| agent_bank | varchar(255) | Maps to `template_format` identifier |
+| status | varchar(50) | Workflow status: `Not Started` \| `In Progress` \| `Needs Review` \| `Certified` \| `Pending` |
 | conc_limit_m | numeric(10,2) | Per-LP concentration limit in $M; default 25 |
 | last_run_at | timestamp nullable | Set on each Shadow BB run |
 | created_at / updated_at | timestamp | |
+| account_number | varchar(20) nullable | *(planned — V1_7)* UBS internal loan reference, e.g. `5VX1796`; unique; operational link to UBS loan administration |
+| loan_amount | numeric(15,2) nullable | *(planned — V1_7)* Committed facility size in USD from Agent Bank Summary |
+| maturity_date | date nullable | *(planned — V1_7)* Facility maturity date |
+| bank_status | varchar(50) nullable | *(planned — V1_7)* Credit/operational status, e.g. `Active` / `Terminated`; distinct from workflow `status` |
+| bank_status_date | date nullable | *(planned — V1_7)* Most recent `bank_status` change date from Agent Bank Summary |
 
 ### `lps`
 
@@ -183,7 +192,7 @@ One row per submission; unique index on `submission_id`.
 |--------|------|-------|
 | id | serial PK | |
 | submission_id | integer FK → submissions unique | |
-| template_format | varchar(50) nullable | Detected bank format: `CITIBANK`, `JPM`, `GOLDMAN_SACHS`, `BARCLAYS`, `BANK_OF_AMERICA`, `WELLS_FARGO`, `CITIZENS_FINANCIAL`, `PNC_BANK`, `FIFTH_THIRD`, `HUNTINGTON`, `WHITE_OAK`, `ARES`, `MIDCAP_FINANCIAL`, `INTERNAL`, `UNKNOWN` |
+| template_format | varchar(50) nullable | Detected bank format. Current values: `CITIBANK`, `JPM`, `GOLDMAN_SACHS`, `BARCLAYS`, `BANK_OF_AMERICA`, `WELLS_FARGO`, `PNC_BANK`, `FIFTH_THIRD`, `HUNTINGTON`, `WHITE_OAK`, `ARES`, `MIDCAP_FINANCIAL`, `INTERNAL`, `UNKNOWN`. Planned additions (Decision 32): `BMO`, `BNY_MELLON`, `CIBC`, `CITY_NATIONAL`, `LLOYDS`, `MT_BANK`, `MIZUHO`, `MORGAN_STANLEY`, `NATIXIS`, `SILICON_VALLEY_BANK`, `SMBC`, `SOCIETE_GENERALE`, `UBS_BANK_USA`. Note: `CITIZENS_FINANCIAL` removed — Citizens Financial Group is a separate institution from SVB/First Citizens. |
 | template_version | varchar(50) nullable | Reserved for future versioning |
 | sheet_name | varchar(255) nullable | Name of the BB sheet extracted from |
 | header_row_index | integer nullable | Zero-based header row index in the sheet |
@@ -214,12 +223,15 @@ One row per submission; unique index on `submission_id`.
 
 ### `bb_templates`
 
-Auto-learned template registry keyed by agent bank. On first confirmed extraction for an agent bank, the sheet name and header row index are saved. On subsequent uploads from the same bank, `SubmissionController` passes these as `sheetNameHint` / `headerRowHint` to skip heuristic detection.
+Auto-learned template registry keyed by agent bank. On first confirmed extraction for an agent bank, the sheet name, header row index, and template class are saved. On subsequent uploads from the same bank, `SubmissionController` passes these as `sheetNameHint` / `headerRowHint` to skip heuristic detection.
+
+> **Multi-format note (Decision 43):** A single agent bank may use more than one template class across different facilities (confirmed for Wells Fargo: Class A on Blue Owl GP Stakes V, Class B on Petershill IV). The current unique key on `agent_bank` is insufficient for this case. When a second confirmed extraction for the same agent bank produces a different template class, a second registry row must be created keyed by `(agent_bank, template_class)` rather than `agent_bank` alone. Schema change planned for `V1_7`.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | id | serial PK | |
-| agent_bank | varchar(255) | Unique (case-insensitive index) |
+| agent_bank | varchar(255) | Case-insensitive index; not unique once multi-class support is added |
+| template_class | varchar(10) nullable | *(planned — V1_7)* `A`, `B`, or `C`; populated on `POST /{id}/confirm`; drives extraction parsing path |
 | sheet_name | varchar(255) nullable | BB sheet name to target |
 | header_row_index | integer nullable | Zero-based header row index |
 | auto_learned | boolean | Default `true` — set by `POST /{id}/confirm` |
@@ -526,117 +538,240 @@ One system-managed job planned: runs on the 1st of each month, resets all active
 
 > **Note on `PE-Sub-Platform-Solution-Design.docx`:** The Word document is a point-in-time export and is no longer maintained in sync automatically. `SOLUTION_DESIGN.md` is the canonical reference.
 
+---
 
-### Multiple Agent BB templates
+## 9. Agent Bank Portfolio
 
-Template #1: Blue Owl GP Stakes V BB by Goldman Sachs Bank USA
+### 9.1 Live Facility Registry
 
-Two summary tables:
+Source: *Agent Bank Summary.xlsx* (extracted 2026-06-12). All facilities are **Active** status.  
+Grand total committed loan volume: **$10,555,217,539** across **17 agent banks** and **71 facility rows**.
 
-Tranche A
+| Agent Bank | `template_format` | Facilities | Committed Volume (USD) | Templates known | Notes |
+|---|---|---|---|---|---|
+| Wells Fargo | `WELLS_FARGO` | 16 | $3,183,224,809 | **2** (Class A + Class B) | Blue Owl GP Stakes V (Class A — prior GS template, WF current agent); Petershill IV (Class B) |
+| Bank of America | `BANK_OF_AMERICA` | 16 | $2,224,406,381 | 0 | Template not yet received |
+| JP Morgan | `JPM` | 6 | $947,357,895 | 0 | Partial FM aliases exist; full template not received |
+| Silicon Valley Bank¹ | `SILICON_VALLEY_BANK` | 10 | $925,961,540 | **1** (Class C) | Arctos American Football Fund; 5 paired Committed/Uncommitted tranches; may use variants per fund |
+| Morgan Stanley | `MORGAN_STANLEY` | 4 | $677,535,718 | 0 | Template not yet received |
+| SMBC | `SMBC` | 2 | $464,705,883² | 0 | Template not yet received |
+| Mizuho | `MIZUHO` | 2 | $370,000,000 | 0 | Template not yet received |
+| BMO | `BMO` | 2 | $332,500,000 | 0 | Template not yet received |
+| Natixis | `NATIXIS` | 2³ | $300,000,000 | 0 | Template not yet received |
+| CIBC | `CIBC` | 1 | $165,000,000 | 0 | Template not yet received |
+| M&T Bank | `MT_BANK` | 1 | $165,000,000 | 0 | Template not yet received |
+| PNC | `PNC_BANK` | 1 | $150,000,000 | 0 | Already in `template_format`; full template not received |
+| BNYM | `BNY_MELLON` | 1 | $150,000,000 | 0 | Template not yet received |
+| Societe Generale | `SOCIETE_GENERALE` | 2 | $150,000,000 | 0 | Template not yet received |
+| City National Bank | `CITY_NATIONAL` | 1 | $125,000,000 | 0 | Template not yet received |
+| UBS Bank USA | `UBS_BANK_USA` | 1 | $125,000,000 | 0 | UBS acting as own agent; template TBD |
+| Lloyds | `LLOYDS` | 1 | $99,525,317 | 0 | Template not yet received |
 
-Borrowing Base
-Eligible Remaining Commitments
-Total Remaining Commitments
-Effective Advance Rate
+**Template coverage:** 3 known templates across 2 active agents (Wells Fargo × 2, SVB × 1). 15 agents have no template received. Minimum expected: 17 templates (one per agent); actual count likely higher given Wells Fargo's confirmed multi-format pattern and SVB's 10-facility range.
 
-Tranche B
+¹ Full legal name in summary: "Silicon Valley Bank (A division of First Citizens Bank)"  
+² SMBC sub-total in source shows $164,705,883 (NB PD IV only) but the sheet also lists West Street Mezz VIII at $300,000,000. Source total is likely a data entry error — confirmed total to be validated with Credit before seeding  
+³ Two account-number rows for the same deal (CD&R X, VI, XII [U]): $292,050,000 + $7,950,000 = $300,000,000 total
 
-Tranche B Excluded LPs
-Total Eligible Remaining Commitments
-Tranche B Advance Rate
-Tranche A Maximum Commitments
-Tranche B Borrowing Base
+### 9.2 UBS Internal Account Numbers
 
+Every facility row in the Agent Bank Summary carries a UBS loan reference in the format `5Vxxxxx` (e.g., `5VX1796`). This is the operational identifier used by UBS Credit for loan administration and must be stored in the `facilities` table as a first-class field. It is distinct from the agent bank's internal deal number.
 
-Followed by columns in Excel
+### 9.3 Structural Patterns in the Portfolio
 
-Grouped by (separate row)
+**Committed / Uncommitted tranche pairs (SVB only)**  
+Five SVB borrowers each have two separately account-numbered loans — one Committed and one Uncommitted tranche with equal amounts. Each tranche generates its own monthly BB submission:
 
-Rated Investors
-Unrated Investors
-Eligible Investors
-Excluded Investors
+| Borrower | Committed account | Uncommitted account | Amount each |
+|---|---|---|---|
+| Arctos Keystone Partners Fund I | 5VZ9848 | 5VZ9849 | $100,480,770 |
+| Arctos American Football Fund | 5VZ4752 | 5VZ4753 | $75,000,000 |
+| Audax Private Equity Fund VII LP | 5VAB067 | 5VAB068 | $120M / $180M |
+| COMVEST CREDIT PARTNERS VII | 5VY7714 | 5VY7842 | $50,000,000 |
+| Arctos Sports Fund II | 5VY4509 | 5VY4577 | $105M / $70M |
 
-Investor
-Parent / Sponsor / Manager
-S&P 
-Moody's
-Net Assets(range)
-Individual Original Commitment 
-Original Commitment 
-Individual Unfunded Commitment 
-Unfunded Capital Commitment 
-% Called
-% Total Unfunded Commitment
-% Eligible Unfunded Commitment
-Concentration Limit
-Excess Concentration
-Eligible Commitment
-Advance Rate
-Borrowing Base Contribution
-% of Borrowing Base
-S&P (numerical ratings scale, 0-9)
-Moody's (numerical ratings scale, 0-9)
-Applicable Rating (numerical ratings scale, 0-9)
+**Multi-fund umbrella facilities**  
+Several facilities span multiple underlying funds, encoded in the borrower name: e.g., `HIG LBO IV, BH III, GB&E III, IV [U]`, `CD&R X, VI, XII [U]`, `HarbourVest Dover St. X, X AIF, XI [U]`. The `[U]` suffix denotes Uncommitted tranche. LP Master records for these facilities cover investors in all named underlying funds combined.
 
-Subtotal
-Total 
+**Tranched large facilities**  
+Wells Fargo Blue Owl GP Stakes V is split across two account numbers ($240,119,760 + $59,880,330 = $300,000,124) and Natixis CD&R across two rows ($292,050,000 + $7,950,000 = $300,000,000). These are participations in a single legal facility divided across UBS loan accounts.
 
-Pink rows highlighted for Reclassified
-Blue rows highlighted for Transferee
+---
 
+## 10. Multi-Agent Template Strategy
 
+### 10.1 Template Class Taxonomy
 
-Template #2 -- Proforma AF BB by Silicon Valley Bank
+Three structurally distinct template classes emerge from the three known templates. A single agent bank (Wells Fargo) is confirmed to use both Class A and Class B — demonstrating that **agent bank identity alone does not determine template class**. Template class must always be auto-detected from sheet content at extraction time (see Decision 43).
 
-Arctos American Footbal Fund (all entities) - Investor List
-Reporting Date
+| Class | Classification source | Ratings columns | Summary structure | Confirmed agent(s) |
+|---|---|---|---|---|
+| **A — Full BB Schedule, group-header classification** | Separate classification header rows between LP data rows (`Rated Investors` / `Unrated Investors` / `Eligible Investors` / `Excluded Investors`) | Text ratings + numerical 0–9 scale | Tranche A + Tranche B sub-tables | Wells Fargo (Blue Owl GP Stakes V — template originally submitted under prior agent Goldman Sachs Bank USA) |
+| **B — Full BB Schedule, column-based classification** | Per-row "Investor Category" column | Text only (S&P / Moody's) | Single summary table | Wells Fargo (Petershill IV) |
+| **C — Simplified Callable Capital** | No classification column; credit officer assigns at Wizard Step 5 | None | Header block only (fund name, reporting date) | Silicon Valley Bank (First Citizens) |
 
-Columns in Excel (shifted)
+**Unclassified agents (0 templates received):** Bank of America, JP Morgan, Morgan Stanley, SMBC, Mizuho, BMO, Natixis, CIBC, M&T Bank, PNC, BNYM, Societe Generale, City National Bank, UBS Bank USA, Lloyds.
 
-Investor Name
-Committed Capital
-Called Capital
-Recallable Distributions
-Excess Concentration
-Remaining Callable Capital
-Remaining Callable Capital Adjusted for Concentration Limit
+These 15 agents may use any of the three known classes or introduce new structural variants. Given Wells Fargo's confirmed multi-format pattern, the portfolio should be assumed to contain **17 or more distinct template formats**. Each new template received must be assigned a class, and new classes defined if required.
 
-Total included investors
+### 10.2 Template A — Wells Fargo, Variant 1 (Blue Owl GP Stakes V)
 
-Excluded Investors
+> **Agent history note:** This template was submitted under the header "Blue Owl GP Stakes V BB by Goldman Sachs Bank USA". Goldman Sachs Bank USA is **not** a current active agent in the portfolio. Blue Owl GP Stakes V is now administered by Wells Fargo (accounts 5VAD225, 5VW9761). The template structure and FM aliases are attributed to `WELLS_FARGO`. Goldman Sachs Bank USA may have been the prior administrative agent before the facility transferred.
 
-None listed in a sample from 2/21/2025
+**Sheet structure:**
+Two summary sub-tables precede LP data. LP rows are grouped under classification header rows; color-coded rows signal reclassification and transferee status. Subtotal rows follow each group; a grand Total row closes the sheet.
 
+| Block | Content |
+|---|---|
+| Tranche A summary | Borrowing Base · Eligible Remaining Commitments · Total Remaining Commitments · Effective Advance Rate |
+| Tranche B summary | Tranche B Excluded LPs · Total Eligible Remaining Commitments · Tranche B Advance Rate · Tranche A Maximum Commitments · Tranche B Borrowing Base |
+| Classification header rows | `Rated Investors` / `Unrated Investors` / `Eligible Investors` / `Excluded Investors` |
+| Row color coding | Pink = Reclassified (`rcl = true`); Blue = Transferee (`transferee = true`) |
 
+**LP data columns and FM Dictionary mappings (bank = `WELLS_FARGO`):**
 
-Template #3 -- Petershill IV BB by Wells Fargo
+| Template header | Canonical field | Notes |
+|---|---|---|
+| Investor | `INVESTOR_NAME` | |
+| Parent / Sponsor / Manager | `PARENT` | |
+| S&P | `SP` | Short-form header — distinct alias from Variant 2's "S & P's Rating" |
+| Moody's | `MDY` | Short-form header |
+| Net Assets (range) | `NAV` | Range label, e.g. "$1bn – $5bn" |
+| Individual Original Commitment | `CAP_COMMIT` | Per-LP capital commitment |
+| Original Commitment | `CAP_COMMIT_TOTAL` | Aggregate — not persisted to `lps` |
+| Individual Unfunded Commitment | `UC` | Per-LP uncalled; primary sort field |
+| Unfunded Capital Commitment | `UC_TOTAL` | Aggregate — not persisted |
+| % Called | `PCT_CALLED` | |
+| % Total Unfunded Commitment | `PCT_UNCALLED` | |
+| % Eligible Unfunded Commitment | `PCT_ELIGIBLE_UNCALLED` | Computed — not persisted |
+| Concentration Limit | `AGENT_CONC` | |
+| Excess Concentration | `CONC_EXCESS` | Computed — not persisted |
+| Eligible Commitment | `ELIGIBLE_COMMITMENT` | Computed — not persisted |
+| Advance Rate | `AGENT_RATE` | |
+| Borrowing Base Contribution | `ABB` | Agent-submitted BB value |
+| % of Borrowing Base | `PCT_BB` | Computed — not persisted |
+| S&P (0–9 scale) | `SP_NUM` | Deferred — not persisted (see Decision 35) |
+| Moody's (0–9 scale) | `MDY_NUM` | Deferred — not persisted |
+| Applicable Rating (0–9 scale) | `APPLICABLE_RATING_NUM` | Deferred — not persisted |
 
-Summary table:
-Borrowing Base
-Eligible Remaining Commitments
-Total Remaining Commitments
-Total Original Commitments
-Effective Advance Rate
+### 10.3 Template B — Wells Fargo, Variant 2 (Petershill IV)
 
-Unnamed column with identifier
-Investor
-Investor Category
-S & P's Rating
-Moody's Rating
-Net Assets (range)
-Individual Original Commitment
-Original Commitment
-Individual Unfunded Commitment
-Unfunded Capital Commitment
-% Called
-% Total Unfunded Commitment
-% Eligible Unfunded Commitment
-Concentration Limit
-Excess Concentration
-Eligible Commitment
-Advance Rate
-Borrowing Base Contribution
-% of Borrowing Base
-Eligibility
+**Sheet structure:**
+Single summary table at the top. LP rows are flat (no group headers); each row carries an Investor Category column that drives classification. An unnamed first column contains a row identifier. An Eligibility column at the far right maps to the `inc` flag.
+
+**LP data columns and FM Dictionary mappings (bank = `WELLS_FARGO`):**
+
+| Template header | Canonical field | Notes |
+|---|---|---|
+| [unnamed column] | `ROW_ID` | Sequence or identifier — not persisted |
+| Investor | `INVESTOR_NAME` | |
+| Investor Category | `CLS` | Per-row classification label, e.g. "Rated Investors" |
+| S & P's Rating | `SP` | Long-form header — distinct alias from Variant 1's "S&P" |
+| Moody's Rating | `MDY` | Long-form header |
+| Net Assets (range) | `NAV` | |
+| Individual Original Commitment | `CAP_COMMIT` | |
+| Original Commitment | `CAP_COMMIT_TOTAL` | Not persisted |
+| Individual Unfunded Commitment | `UC` | |
+| Unfunded Capital Commitment | `UC_TOTAL` | Not persisted |
+| % Called | `PCT_CALLED` | |
+| % Total Unfunded Commitment | `PCT_UNCALLED` | |
+| % Eligible Unfunded Commitment | `PCT_ELIGIBLE_UNCALLED` | Not persisted |
+| Concentration Limit | `AGENT_CONC` | |
+| Excess Concentration | `CONC_EXCESS` | Not persisted |
+| Eligible Commitment | `ELIGIBLE_COMMITMENT` | Not persisted |
+| Advance Rate | `AGENT_RATE` | |
+| Borrowing Base Contribution | `ABB` | |
+| % of Borrowing Base | `PCT_BB` | Not persisted |
+| Eligibility | `INC` | Maps to boolean `inc`; text values to be confirmed (e.g., "Eligible" / "Excluded") |
+
+**Structural differences from Variant 1:** No numerical rating columns; no Tranche B summary table; Fitch column absent; explicit Eligibility column rather than classification inferred from group header rows; "Investor Category" per-row column present. Both variants share `bank = WELLS_FARGO` in the FM Dictionary — the alias resolver applies all WF aliases; structural detection in the extraction service handles parsing logic differences (see Decision 43).
+
+### 10.4 Template C — Silicon Valley Bank / First Citizens (Arctos American Football Fund)
+
+**Sheet structure:**
+Header block (fund name, reporting date) followed by a flat LP table. Investors are divided into two sections — "Total included investors" and "Excluded Investors" — by a section header row (identical pattern to Class A group headers but binary Included/Excluded only). No ratings, no advance rate, no BB contribution column.
+
+**LP data columns and FM Dictionary mappings (bank = `SILICON_VALLEY_BANK`):**
+
+| Template header | Canonical field | Notes |
+|---|---|---|
+| Investor Name | `INVESTOR_NAME` | |
+| Committed Capital | `CAP_COMMIT` | |
+| Called Capital | `CALLED_CAP` | |
+| Recallable Distributions | `RECALLABLE_DIST` | New field — affects drawable capital; see Decision 38 |
+| Excess Concentration | `CONC_EXCESS` | Not persisted |
+| Remaining Callable Capital | `UC` | Equivalent to Unfunded Capital Commitment in other templates |
+| Remaining Callable Capital Adjusted for Concentration Limit | `UEC` | Directly computed in template — not persisted (derived by BB engine) |
+
+**Key distinction:** Advance Rate and Borrowing Base Contribution are absent. These cannot be extracted — they must be derived after the credit officer assigns LP classification in Wizard Step 5. Until classification is set, `agent_rate` and `abb` remain null on LP records for SVB facilities.
+
+### 10.5 Computed Fields — Extraction vs. Persistence Policy
+
+The following canonical fields appear in agent templates but are computed values, not source data. They must be extracted into the `ExtractionResult` for review in the Extraction Preview screen, but must **not** be persisted to the `lps` table (consistent with Decision 5):
+
+| Canonical field | Computed as |
+|---|---|
+| `PCT_ELIGIBLE_UNCALLED` | LP uncalled ÷ total eligible uncalled |
+| `ELIGIBLE_COMMITMENT` | LP uncalled − concentration excess |
+| `CONC_EXCESS` | MAX(0, LP uncalled − concentration limit × total uncalled) |
+| `PCT_BB` | LP ABB ÷ total ABB |
+| `UC_TOTAL` | Aggregate uncalled (facility-level) |
+| `CAP_COMMIT_TOTAL` | Aggregate capital commitment (facility-level) |
+
+### 10.6 New LP Table Fields Required
+
+The following fields are required in the `lps` table to support the full agent template set. None currently exist in the schema.
+
+| Field | Type | Source template(s) | Notes |
+|---|---|---|---|
+| `transferee` | `BOOLEAN NOT NULL DEFAULT FALSE` | Wells Fargo — Template A (Class A, Variant 1) | Set when POI detects blue row background; indicates the LP entered via transfer, not original subscription |
+| `recallable_dist` | `VARCHAR(50)` (or `NUMERIC` per G10 resolution) | Silicon Valley Bank (Template C) | Recallable distributions reduce net unfunded capital; NULL for non-SVB facilities |
+
+---
+
+## Additions to §7 — Key Design Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 30 | `facilities` table enriched with UBS operational metadata | Add `account_number VARCHAR(20)` (UBS loan ref, e.g., `5VX1796`), `loan_amount NUMERIC(15,2)`, `maturity_date DATE`, `bank_status VARCHAR(50)`, `bank_status_date DATE`. `bank_status` is the credit/operational status (Active / Terminated) — separate from the workflow `status` column. Without these fields the facility record has no link to UBS loan administration systems and the Agent Bank Exposure report (G9) cannot be built. |
+| 31 | SVB Committed / Uncommitted tranches are modelled as separate `facilities` rows | Each tranche has a distinct UBS account number, its own loan amount, and its own monthly BB submission cycle. No parent-child tranche sub-table is introduced. The tranche type is encoded in the facility name (e.g., "Arctos American Football Fund (Committed)"). Merging into one row would require a sub-table and complicate the submission/extraction workflow with no measurable benefit. |
+| 32 | `template_format` enum expanded to cover all 17 active portfolio agents | New values added: `BMO`, `BNY_MELLON`, `CIBC`, `CITY_NATIONAL`, `LLOYDS`, `MT_BANK`, `MIZUHO`, `MORGAN_STANLEY`, `NATIXIS`, `SILICON_VALLEY_BANK`, `SMBC`, `SOCIETE_GENERALE`, `UBS_BANK_USA`. `JPM`, `BANK_OF_AMERICA`, `WELLS_FARGO`, `PNC_BANK` already exist. `GOLDMAN_SACHS` remains in the enum for historical submissions but is not an active portfolio agent. `CITIZENS_FINANCIAL` is retired — Citizens Financial Group is a separate institution; SVB is now a First Citizens division and is covered by `SILICON_VALLEY_BANK`. |
+| 33 | Bank-scoped FM Dictionary aliases seeded for 2 active agents (WF both variants + SVB); priority order for remaining agents by volume | The `fm_aliases.bank` column supports bank-scoped aliases. `V1_8` pre-seeds all Wells Fargo aliases (covering both Class A and Class B variants under `bank = WELLS_FARGO`) and all Silicon Valley Bank aliases (`bank = SILICON_VALLEY_BANK`) from §10.2–10.4. Both WF variant alias sets coexist under the same bank key; the alias resolver fires whichever headers are present in the file — no per-variant discrimination needed. Priority for template solicitation from remaining 15 agents: Bank of America ($2.22B, 16 facilities) → JP Morgan ($947M, 6) → Morgan Stanley ($678M, 4) → SMBC ($465M, 2) → Mizuho ($370M, 2). |
+| 34 | LP classification detection strategy is template-class-specific, not agent-specific | Class A (WF Variant 1): `cls` derived from group-header rows — extraction service tracks the current group header row and stamps it as `cls` on each subsequent LP row until the next header. Class B (WF Variant 2): `cls` read directly from the "Investor Category" per-row column via FM Dictionary alias. Class C (SVB): no classification present; `cls` defaults to blank; credit officer assigns at Wizard Step 5. Template class is determined at extraction time by structural heuristics (see Decision 43), not by agent bank identity. |
+| 35 | Numerical ratings columns (Class A 0–9 scale) — deferred | Class A template (WF Variant 1, Blue Owl GP Stakes V) contains S&P (0–9), Moody's (0–9), and Applicable Rating (0–9) columns alongside text ratings. Text ratings (`sp`, `mdy`, `fitch`) are canonical; the 0–9 numerical scale appears to be a convention from the prior Goldman Sachs administration of this facility. The Applicable Rating column replicates the advance rate eligibility determination that the BB engine already makes from text ratings. No new `lps` columns for numerical ratings in the initial implementation; if a future Wells Fargo submission retains this convention, the decision will be re-evaluated. |
+| 36 | Row colour coding detected via Apache POI cell background; drives `rcl` and `transferee` flags | Class A template (WF Variant 1) uses pink cell background for Reclassified LPs (`rcl = true`, existing field) and blue for Transferee LPs (`transferee = true`, new field — see §10.6). Apache POI `XSSFCellStyle.getFillForegroundColorColor()` is used per row at extraction time. No equivalent colour convention is confirmed for Class B or C; any agent template received in future may introduce its own colour conventions. |
+| 37 | "Individual" vs. aggregate commitment columns — "Individual" maps to LP Master, aggregates discarded | Both WF template variants contain paired commitment columns: Individual Original Commitment / Original Commitment and Individual Unfunded Commitment / Unfunded Capital Commitment. "Individual" = this LP entity's per-fund line amount — the correct value for the LP Master. Aggregate variants = facility- or fund-level totals; extracted for display in ExtractionPreview but not persisted to `lps`. FM Dictionary maps "Individual Original Commitment" → `CAP_COMMIT`; "Individual Unfunded Commitment" → `UC`. Expect other agents' templates to follow the same pattern; FM aliases handle header text variations per bank. |
+| 38 | SVB "Recallable Distributions" requires a new `lps.recallable_dist` field | SVB Template C (Class C) includes Recallable Distributions — previously distributed capital that can be recalled and reduces the net remaining callable capital. This affects the drawable capital calculation for SVB facilities. A new `lps.recallable_dist` column is required; it defaults to NULL for all non-SVB templates. The BB engine must be updated to subtract recallable distributions from `uc` when computing uncalled capital for affected SVB facilities. This field may also be required if any of the 15 unclassified agents uses a similar callable-capital template structure. |
+| 39 | UBS Bank USA as agent bank — no special treatment | Edison Partners XI LP (account 5VY6837, $125M, maturity 10/14/2026) is agented by UBS Bank USA itself. Despite UBS being the Shadow BB analysis entity, this facility flows through the same extraction and ingest pipeline as any other agent bank and uses `template_format = UBS_BANK_USA`. Internal template format assignment follows first confirmed extraction. |
+| 40 | SMBC committed volume discrepancy — confirm before seeding | The source summary shows SMBC "Totals Loan Amount: $164,705,883" but lists two facilities totalling $464,705,883 (NB PD IV $164.7M + West Street Mezz VIII $300M). The sub-total appears to reference NB PD IV only — likely a source spreadsheet formula error. Actual committed volume is $464,705,883 pending Credit confirmation. The `V1_7` seed migration must hold this value as a comment pending sign-off. |
+| 41 | Facility seeding migration `V1_7__facility_seed.sql` | All 71 facility rows from the Agent Bank Summary are seeded via a new Flyway migration. Fields populated: `name`, `agent_bank`, `account_number`, `loan_amount`, `maturity_date`, `bank_status` (`Active`), `bank_status_date`. The migration uses `INSERT … ON CONFLICT (account_number) DO UPDATE` once `account_number` carries a unique constraint. Depends on the schema additions in Decision 30 being applied in the same migration or a prior one. |
+| 42 | FM Dictionary seeding migration `V1_8__fm_alias_seed.sql` covers Wells Fargo (both variants) and SVB | Aliases for `WELLS_FARGO` (columns from §10.2 and §10.3 combined — both WF variants share the same bank key) and `SILICON_VALLEY_BANK` (columns from §10.4) are pre-seeded. Separated from `V1_7` to keep facility metadata and alias seeding independent. Aliases for the 15 remaining agents are populated on first confirmed extraction via the manual remap flow. No Goldman Sachs aliases seeded — GS is not an active agent. |
+| 43 | Template class must be auto-detected from sheet content, not inferred from agent bank identity | Wells Fargo uses both Class A (group-header rows, Tranche A/B summary, numerical ratings) and Class B (Investor Category column, single summary, Eligibility column) across different facilities. Agent bank identity alone cannot determine which parsing path to use. The extraction service must detect template class from content heuristics: (1) presence of "Tranche A" or "Tranche B" keyword in the first 15 rows → Class A; (2) "Investor Category" as a column header → Class B; (3) absence of any ratings or Advance Rate columns → Class C; (4) unmatched → Class A as default (widest column coverage). Detected class is cached in `bb_templates` via a new `template_class VARCHAR(10)` column alongside `sheet_name` and `header_row_index`, so subsequent uploads for the same agent/facility pair skip the heuristic. |
+
+---
+
+## Additions to §8 — Gaps and Open Questions
+
+### New implementation gaps
+
+| # | Gap | Impact | Notes |
+|---|-----|--------|-------|
+| G11 | **`facilities` table missing operational metadata** | Facility records cannot be linked to UBS loan administration; Agent Bank Exposure report (G9) cannot be built | Requires schema migration adding `account_number`, `loan_amount`, `maturity_date`, `bank_status`, `bank_status_date` (Decision 30) |
+| G12 | **`template_format` enum does not cover 13 of 17 active portfolio agents** | Uploads from BMO, BNYM, CIBC, City National, Lloyds, M&T Bank, Mizuho, Morgan Stanley, Natixis, SMBC, Societe Generale, SVB, UBS Bank USA will be tagged `UNKNOWN` | Requires enum expansion (Decision 32) in `submission_extractions` schema and `pe-sub-extraction` detection logic |
+| G13 | **FM Dictionary has no bank-scoped aliases for Wells Fargo (either variant) or SVB** | Extraction for all three known templates falls back to heuristic column detection — low field-match confidence and increased unrecognised column count | Requires `V1_8` alias seed migration (Decision 42); full column mappings specified in §10.2–10.4 |
+| G14 | **Class A group-header-row classification detection not implemented** | Wells Fargo Variant 1 (Blue Owl GP Stakes V) and any future Class A agent template will not auto-assign `cls` from group headers; all LPs require manual classification in Wizard Step 5 | `pe-sub-extraction` needs a parsing mode that tracks the current classification group header and stamps it on subsequent LP rows (Decision 34) |
+| G15 | **Class C (SVB) advance rate / BB absence not handled** | SVB extractions will attempt to populate `agent_rate` and `abb` from non-existent columns; extracted values will be null; wizard must not block on these fields | Extraction must suppress missing-field warnings for `AGENT_RATE` and `ABB` on Class C templates; Wizard Step 5 must prompt for classification before BB can be derived (Decisions 34, 43) |
+| G16 | **`lps.transferee` field does not exist** | Wells Fargo Variant 1 blue-row (Transferee) LP flag cannot be captured | Requires new `transferee BOOLEAN NOT NULL DEFAULT FALSE` column on `lps` (Decision 36; §10.6) |
+| G17 | **`lps.recallable_dist` field does not exist** | SVB Recallable Distributions cannot be stored; drawable capital calculation for SVB facilities will be incorrect | Requires new `recallable_dist` column on `lps`; BB engine update for SVB facilities (Decision 38; §10.6) |
+| G18 | **Apache POI colour extraction not implemented in `pe-sub-extraction`** | Wells Fargo Variant 1 (Class A) row colour codes (Reclassified / Transferee) are silently ignored | Requires `XSSFCellStyle.getFillForegroundColorColor()` check per row in the Class A extraction path (Decision 36) |
+| G19 | **`bb_templates` registry has no `template_class` column** | Auto-learned template hints (sheet name, header row) are stored per agent bank but template class is not cached; each upload for a multi-format agent (Wells Fargo) must re-run structural detection heuristics | Requires `ALTER TABLE bb_templates ADD COLUMN template_class VARCHAR(10)` and population on first `POST /{id}/confirm` (Decision 43) |
+
+### New open questions
+
+- **SMBC total discrepancy**: Confirm whether West Street Mezz VIII ($300M) belongs in the SMBC sub-total — source appears to be a formula error (Decision 40)
+- **Wells Fargo template history**: The Class A template (Blue Owl GP Stakes V) was produced under Goldman Sachs Bank USA letterhead. Confirm whether future Blue Owl GP Stakes V BB submissions from Wells Fargo will retain the Class A structure (Tranche A/B, group headers, numerical ratings) or migrate to the Class B format used for Petershill IV. Until confirmed, `bb_templates` should store distinct entries per facility, not just per agent bank
+- **Tranche A / Tranche B LP overlap (Class A template)**: Are individual LPs present in both Tranche A and Tranche B sections of the WF Variant 1 sheet, or is each LP row unique across tranches? Determines whether `lps` rows must be deduplicated at ingest
+- **SVB Recallable Distributions formula**: Confirm whether `Remaining Callable Capital = Unfunded Commitment − Recallable Distributions` before implementing the BB engine update (Decision 38)
+- **Templates for 15 unclassified agents**: Bank of America, JP Morgan, Morgan Stanley, SMBC, Mizuho, BMO, Natixis, CIBC, M&T Bank, BNYM, Societe Generale, City National, UBS Bank USA, Lloyds, PNC — templates must be solicited from Credit before those facilities can enter active processing. Given the portfolio spans 71 facilities across 17 agents, a minimum of 17 distinct template formats is assumed with additional variants likely
+- **Multi-format agents beyond Wells Fargo**: Are any of the 14 unclassified agents confirmed to use multiple template formats across their facilities? Bank of America (16 facilities) and SVB (10 facilities, 5 fund types) are the most likely candidates
+- **Multi-fund umbrella LP deduplication**: For umbrella facilities (e.g., HIG LBO IV, BH III, GB&E III, IV [U]), confirm whether the LP Master carries one record per LP across all sub-funds or one record per LP per sub-fund

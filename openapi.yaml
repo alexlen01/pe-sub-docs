@@ -286,6 +286,77 @@ paths:
               schema:
                 $ref: '#/components/schemas/IngestResult'
 
+  /lps/rates:
+    get:
+      tags: [lps]
+      summary: LP advance rates and concentration limits as of a given period
+      description: >
+        Returns the most-recent `lp_rates` row per LP with `effective_date ≤ effective_date`
+        parameter. Used by the Run Shadow BB screen to pre-fill UBS Adv Rate and Conc. Limit
+        columns without requiring the credit officer to re-enter rates each period.
+        Falls back to today's date when the parameter is omitted.
+      operationId: getLpRates
+      parameters:
+        - name: effective_date
+          in: query
+          required: false
+          schema: { type: string, pattern: '^\d{4}-\d{2}$', example: '2026-05' }
+          description: Period month (YYYY-MM) — returns rates in effect as of the last day of this month
+      responses:
+        '200':
+          description: List of LP rates (one per LP, most recent as of the requested date)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LpRate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /lps/rates/batch:
+    post:
+      tags: [lps]
+      summary: Upsert LP advance rates for a batch of LPs
+      description: >
+        Inserts or updates `lp_rates` rows. LP lookup is by case-insensitive name match
+        against `lps.name`. Unknown LP names return a 422 entry per row in the response.
+        Duplicate rows for the same LP + `effectiveDate` are updated (upsert).
+      operationId: batchUpsertLpRates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [lpName, ubsAdvRatePct, ubsConcLimitPct, effectiveDate]
+                properties:
+                  lpName:          { type: string, description: Investor name — case-insensitive match }
+                  ubsAdvRatePct:   { type: number, description: UBS advance rate as decimal fraction e.g. 0.90 }
+                  ubsConcLimitPct: { type: number, description: Per-LP concentration limit as decimal fraction e.g. 0.075 }
+                  effectiveDate:   { type: string, format: date, description: Date from which this rate applies }
+                  classification:  { type: string, description: LP classification at time of rate assignment }
+                  source:          { type: string, description: Origin system or analyst identifier }
+      responses:
+        '200':
+          description: Results per input row — includes accepted and rejected entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    lpName:   { type: string }
+                    status:   { type: string, enum: [accepted, rejected] }
+                    reason:   { type: string, nullable: true }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          description: One or more LP names could not be resolved to a known LP record
+
   # ── Borrowing Base ───────────────────────────────────────────────────────────
 
   /bb/run/{facilityId}:
@@ -525,6 +596,29 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: Cannot abort — submission is already Processed or already Aborted
+
+  /submissions/{id}/complete:
+    post:
+      tags: [submissions]
+      summary: Accept Shadow BB results — marks submission Processed and facility Certified
+      description: >
+        Called by the Run Shadow BB screen after the credit officer reviews and accepts the
+        calculation results. Sets `submission.status = "Processed"`, `submission.wizardStep = 6`,
+        `facility.status = "Certified"`, and stamps `facility.lastRunAt` to the current time.
+        Idempotent — calling it more than once is safe and returns the same state.
+        Writes a `Shadow BB Completed` audit event.
+      operationId: completeSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Updated submission record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /submissions/{id}/confirm:
     post:
@@ -1310,18 +1404,60 @@ components:
       type: object
       description: Portfolio-level Shadow BB metrics
       properties:
-        totalUBB:        { type: number, description: Total UBS Borrowing Base ($M) }
-        totalABB:        { type: number, description: Total Agent Borrowing Base ($M) }
-        bbDelta:         { type: number, description: UBS BB minus Agent BB ($M) }
-        ear:             { type: number, description: UBS Effective Advance Rate (totalUBB / totalUEC) }
-        agentEar:        { type: number, description: Agent Effective Advance Rate }
-        earDelta:        { type: number }
-        totalUEC:        { type: number, description: Total UBS Eligible Uncalled Capital ($M) }
-        totalUC:         { type: number, description: Total Uncalled Capital of included LPs ($M) }
-        totalConcExcess: { type: number, description: Total concentration excess above per-LP cap ($M) }
-        includedCount:   { type: integer }
-        excludedCount:   { type: integer }
-        reclassCount:    { type: integer }
+        totalUBB:
+          type: number
+          description: >
+            Total UBS Borrowing Base ($M).
+            Formula: sum(included LPs, uecM * ubsAdvRate).
+            An LP is included when inc=true AND cls != "Excluded".
+        totalABB:
+          type: number
+          description: >
+            Total Agent Borrowing Base ($M).
+            Formula: sum(all LPs, abbM) where abbM is the agent-reported BB figure extracted from the schedule.
+        bbDelta:
+          type: number
+          description: >
+            UBS BB minus Agent BB ($M). Formula: totalUBB - totalABB.
+            Positive means UBS is more generous; negative means agent is more generous.
+        ear:
+          type: number
+          description: >
+            UBS Effective Advance Rate (decimal). Formula: totalUBB / totalUEC.
+            Represents the blended advance rate across all included eligible uncalled capital.
+        agentEar:
+          type: number
+          description: >
+            Agent Effective Advance Rate (decimal). Formula: totalABB / totalUEC.
+            Uses the same totalUEC denominator as UBS EAR for comparability.
+        earDelta:
+          type: number
+          description: UBS EAR minus Agent EAR (decimal). Formula ear - agentEar.
+        totalUEC:
+          type: number
+          description: >
+            Total UBS Eligible Uncalled Capital ($M).
+            Formula: sum(included LPs, uecM) where uecM = MIN(ucM, concLimitM).
+            concLimitM = concLimitPct * totalUncalledM for the facility.
+        totalUC:
+          type: number
+          description: Total Uncalled Capital of included LPs ($M) - the raw uncalled before the concentration cap is applied.
+        totalConcExcess:
+          type: number
+          description: >
+            Total concentration excess ($M). Formula: sum(all LPs, MAX(0, ucM - uecM)).
+            Non-zero for any LP whose uncalled capital exceeds its per-LP concentration limit.
+        includedCount:
+          type: integer
+          description: >
+            Number of LPs included in the UBS BB. Formula: count of LPs where inc=true AND cls != "Excluded".
+            Note: LPs that are included but have zero uncalled (ucM=0) still count.
+        excludedCount:
+          type: integer
+          description: Number of LPs with cls = "Excluded".
+        reclassCount:
+          type: integer
+          description: Number of LPs where the credit officer changed the classification from the LP Master value (rcl=true).
         calculatedAt:    { type: string, format: date-time }
         params:          { $ref: '#/components/schemas/BBParams' }
 
@@ -1502,7 +1638,7 @@ components:
       properties:
         document:          { type: string, description: Original filename }
         format:            { type: string, description: Human-readable bank template name e.g. "Excel Workbook — Citibank template" }
-        tablesIdentified:  { type: string, description: Table summary including sheet name e.g. "1 borrowing-base table · Sheet: BB Schedule" }
+        tablesIdentified:  { type: string, description: "Table summary including sheet name e.g. '1 borrowing-base table - Sheet BB Schedule'" }
         tableLocation:     { type: string, description: Row range of data e.g. "Rows 4–147" }
         headerRow:         { type: integer, description: One-based header row number }
         totalRows:         { type: integer, description: Total data rows parsed }
