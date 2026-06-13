@@ -101,15 +101,12 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 
 | File | Contents |
 |------|----------|
-| `V1_1__schema.sql` | All DDL — every `CREATE TABLE` and index |
-| `V1_2__seed.sql` | Config seed: `busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`; FM Dictionary seed (`fm_canonical_fields`, `fm_aliases`, `fm_blocklist`) |
-| `V1_3__shadow_bb_state.sql` | `ALTER TABLE submissions ADD COLUMN wizard_step INTEGER NOT NULL DEFAULT 1, ADD COLUMN shadow_bb_overrides JSONB` |
-| `V1_4__lp_rates.sql` | `CREATE TABLE lp_rates` (LP rates feed); UPDATE `agent_tiers` config to 5-tier scale matching BUSA (90 / 75 / 65 / 50 / 0) |
-| `V1_5__lp_rates_seed.sql` | Simulated LP rates (effective 2025-01-01) seeded from existing `lps.cls` values |
-| `V1_7__facility_seed.sql` | *(planned)* `ALTER TABLE facilities ADD COLUMN account_number, loan_amount, maturity_date, bank_status, bank_status_date`; INSERT all 71 facility rows from Agent Bank Summary (Decision 30, 41) |
-| `V1_8__fm_alias_seed.sql` | *(planned)* Bank-scoped FM Dictionary aliases for GOLDMAN_SACHS, WELLS_FARGO, SILICON_VALLEY_BANK (Decision 42; §10.2–10.4) |
+| `V1_1__schema.sql` | All DDL — `users`, `facilities`, `lp_records`, `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables |
+| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers` 5-tier, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`); FM Dictionary — 30 canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), all aliases, blocklist, suggestions; BB template registry (3 agent banks, GS group headers using Agent LP Classification taxonomy); LP rates feed seeded from `lp_records` (effective 2025-01-01, `source='SIMULATED'`) |
+| `V1_8__facility_seed.sql` | *(planned)* `ALTER TABLE facilities ADD COLUMN account_number, loan_amount, maturity_date, bank_status, bank_status_date`; INSERT all 71 facility rows from Agent Bank Summary (Decision 30, 41) |
+| `V1_9__fm_alias_seed.sql` | *(planned)* Bank-scoped FM Dictionary aliases for WELLS_FARGO and SILICON_VALLEY_BANK (Decision 42; §10.2–10.4) |
 
-To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`.
+To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`. V1_1 and V1_2 are the consolidated base — do **not** modify them once a production DB has been initialised; use new numbered files instead (see Decision 44).
 
 ### `users`
 
@@ -138,13 +135,15 @@ To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the 
 | bank_status | varchar(50) nullable | *(planned — V1_7)* Credit/operational status, e.g. `Active` / `Terminated`; distinct from workflow `status` |
 | bank_status_date | date nullable | *(planned — V1_7)* Most recent `bank_status` change date from Agent Bank Summary |
 
-### `lps`
+### `lp_records`
 
-Stores the LP Master — one record per LP per facility.
+Stores the LP Master — one record per LP per facility. Rank is computed dynamically by the Shadow BB engine (sorted by uncalled capital desc) and is not stored.
+
+Column naming aligned with LP Master schema: `name → investor_name`, `hq → high_qty`, `type → inv_type`.
 
 | Group | Columns |
 |-------|---------|
-| Identity & Classification | rank, name, parent, spv, hq, type, region, ig, cls, cls_tag |
+| Identity & Classification | investor_name, parent, spv, high_qty, inv_type, region, ig, cls, cls_tag |
 | Ratings | sp, mdy, fitch |
 | Financial Scale | aum, nav, pension, pension_funded |
 | Commitment Data | cap_commit, pct_cap_commit, called_cap |
@@ -154,6 +153,23 @@ Stores the LP Master — one record per LP per facility.
 | Meta | notes, facility_id (FK → facilities), created_at, updated_at |
 
 Note: `rate` (BUSA advance rate) and computed fields (`ubb`, `delta`, `uec`) are **not stored** — they are derived at runtime by the BB engine from `cls` and `uc`. Only `abb` (agent's submitted BB value) is stored as a source field.
+
+### `lp_rates`
+
+LP rates feed — one row per LP per effective period. Populated by the monthly batch ingestion process; `LpRateService.findLatestAsOf(lpId, asOf)` returns the most recent row on or before the submission date for use in the Shadow BB calculation. Seeded with simulated rates (`source = 'SIMULATED'`, effective 2025-01-01) so test submissions have rates from day one.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial PK | |
+| lp_id | integer FK → lp_records | `ON DELETE CASCADE` |
+| effective_date | date | Date rates take effect |
+| classification | varchar(50) | `cls` value at time of ingestion |
+| ubs_adv_rate_pct | numeric(7,4) | UBS advance rate as decimal fraction (0.9000 = 90%) |
+| ubs_conc_limit_pct | numeric(7,4) | Per-LP concentration cap as fraction of total eligible uncalled |
+| source | varchar(50) | `BATCH_FEED` (production) or `SIMULATED` (dev seed) |
+| created_at | timestamp | |
+
+Unique constraint on `(lp_id, effective_date)`. Indices on `effective_date` and `lp_id`.
 
 ### `bb_snapshots`
 
@@ -212,7 +228,7 @@ One row per submission; unique index on `submission_id`.
 | facility_id | integer FK → facilities | |
 | row_index | integer | Source row in the extracted LP array |
 | extracted_name | varchar(255) nullable | Investor name as extracted |
-| matched_lp_id | integer FK → lps nullable | Best LP Master match, if any |
+| matched_lp_id | integer FK → lp_records nullable | Best LP Master match, if any |
 | matched_lp_name | varchar(255) nullable | Matched LP name at time of ingest |
 | match_score | integer nullable | Combined similarity score 0–100 |
 | decision | varchar(50) | Default `pending`; transitions to `accepted`, `rejected`, or `manual` |
@@ -403,8 +419,11 @@ Writes an `LP Data Updated` audit event when at least one LP is updated.
 | `aliasConfig` | no | JSON alias map built from live FM Dictionary; overrides built-in aliases |
 | `sheetNameHint` | no | Preferred sheet name; falls back to heuristic if not found |
 | `headerRowHint` | no | Known header row index; skips header detection when provided |
+| `classificationConfig` | no | JSON `{ "header text": "Agent LP Classification" }` map for templates that group LPs into classification **section rows**; built by `ClassificationConfigBuilder` from `bb_template_groups`. Merged on top of the standard Agent LP Classification values, which are always recognised |
 
 Template format is auto-detected from keywords in the first 5 rows. Header row is detected by highest canonical-alias match score across rows 0–9.
+
+**Agent LP Classification section rows.** Many Agent BB templates separate LPs into classification groups using header rows (e.g. a row reading `Designated PWM` above the LPs in that class) rather than a per-row column, interleaving sub/total rows that must be skipped. `ClassificationRowDetector` recognises a row whose name cell matches a known group header, treats it as a section marker (not an LP), and fills its classification down onto the `AGENT_LP_CLASSIFICATION` field of every LP beneath it until the next header. A populated per-row classification column always wins over the inherited section value; sub/total rows remain filtered.
 
 ### Field Mapping
 
@@ -455,7 +474,7 @@ Template format is auto-detected from keywords in the first 5 rows. Header row i
 
 ### Step 4 — Final Shadow BB (LP record fields)
 
-The production `lps` table schema mirrors the BB_PROCESS_FLOW Step 4 field set. `type` (`Institutional` | `HNW`) covers both "Investor Type" and "Institutional vs HNW".
+The production `lp_records` table schema mirrors the BB_PROCESS_FLOW Step 4 field set. `inv_type` (`Institutional` | `HNW`) covers both "Investor Type" and "Institutional vs HNW".
 
 ### Step 6 — Portfolio-Level Reporting
 
@@ -508,6 +527,8 @@ One system-managed job planned: runs on the 1st of each month, resets all active
 | 25 | Null-marker filtering at two levels | N/A, N/R, NA, NR values are filtered at extraction time: (a) row-level — entire row skipped if investor name is a null marker; (b) field-level — cell value stored as null with a "value missing" warning |
 | 26 | `CANONICAL_META` in SubmissionController for field-map labelling | A static map in `SubmissionController.java` keys extraction_key or canonical name to `(canonical, group)`. Used to label field-map rows returned by `GET /{id}/field-map`. Non-extractable fields are keyed by canonical name; extractable fields by extraction_key. Without this map, matched fields appeared in group "Other" |
 | 27 | Two-role RBAC: Credit Administrator and Supervisor | Consolidated from three roles (Credit Officer, Supervisor, Admin). Credit Administrator absorbs all Credit Officer day-to-day operations and all Admin system configuration actions (Configuration Studio, Match Thresholds, Field Mapping, User Management). Supervisor retains escalation authority: override any active workflow step regardless of ownership, reassign submission ownership, full cross-facility audit trail, and LP classification override on non-owned submissions. Configuration edits are Credit Administrator-only; Supervisor has view-only access to configuration. See `pe-sub-platform/docs/RBAC_ROLES.md` for the full permission matrix and Supervisor-specific action definitions |
+| 30 | `LP Classification` split into Agent LP Classification + UBS LP Classification (2026-06-12) | The single canonical field conflated the agent's own category label (lifted verbatim from the Agent BB doc) with UBS's computed advance-rate tier. Split into **Agent LP Classification** (raw input, extraction_key `AGENT_LP_CLASSIFICATION`; standard values: Rated Included, Non-Rated Included, Designated Institutional, Designated PWM, Largest 5 Designated, Aggregate Designated PWM) and **UBS LP Classification** (derived tier: Rated / Unrated >2bn / Unrated 1–2bn / Eligible / Excluded). Applied across `fm_canonical_fields` (V1_6), pe-sub-ui + prototype Field Mapping Dictionaries, and the extraction `AGENT_LP_CLASSIFICATION` key |
+| 31 | Agent LP Classification section rows handled in extraction, configured via `bb_template_groups` | Agent templates frequently group LPs into classification sections using header rows (e.g. "Designated PWM") rather than a per-row column, interleaving sub/total rows. `ClassificationRowDetector` (pe-sub-extraction) recognises these via the standard values plus a per-agent `classificationConfig` JSON (`header_text → classification`) built by `ClassificationConfigBuilder` from `bb_template_groups`, fills the value down onto LPs beneath the header, and lets a populated per-row column override the inherited value. `bb_template_groups.header_text` stores the agent document's literal grouping text; `classification` stores the resolved canonical value. Onboarding a new template variant is configuration (sheet/header/skip-keywords/aliases/sections), not code — see §8 |
 
 ---
 
@@ -743,10 +764,12 @@ The following fields are required in the `lps` table to support the full agent t
 | 37 | "Individual" vs. aggregate commitment columns — "Individual" maps to LP Master, aggregates discarded | Both WF template variants contain paired commitment columns: Individual Original Commitment / Original Commitment and Individual Unfunded Commitment / Unfunded Capital Commitment. "Individual" = this LP entity's per-fund line amount — the correct value for the LP Master. Aggregate variants = facility- or fund-level totals; extracted for display in ExtractionPreview but not persisted to `lps`. FM Dictionary maps "Individual Original Commitment" → `CAP_COMMIT`; "Individual Unfunded Commitment" → `UC`. Expect other agents' templates to follow the same pattern; FM aliases handle header text variations per bank. |
 | 38 | SVB "Recallable Distributions" requires a new `lps.recallable_dist` field | SVB Template C (Class C) includes Recallable Distributions — previously distributed capital that can be recalled and reduces the net remaining callable capital. This affects the drawable capital calculation for SVB facilities. A new `lps.recallable_dist` column is required; it defaults to NULL for all non-SVB templates. The BB engine must be updated to subtract recallable distributions from `uc` when computing uncalled capital for affected SVB facilities. This field may also be required if any of the 15 unclassified agents uses a similar callable-capital template structure. |
 | 39 | UBS Bank USA as agent bank — no special treatment | Edison Partners XI LP (account 5VY6837, $125M, maturity 10/14/2026) is agented by UBS Bank USA itself. Despite UBS being the Shadow BB analysis entity, this facility flows through the same extraction and ingest pipeline as any other agent bank and uses `template_format = UBS_BANK_USA`. Internal template format assignment follows first confirmed extraction. |
-| 40 | SMBC committed volume discrepancy — confirm before seeding | The source summary shows SMBC "Totals Loan Amount: $164,705,883" but lists two facilities totalling $464,705,883 (NB PD IV $164.7M + West Street Mezz VIII $300M). The sub-total appears to reference NB PD IV only — likely a source spreadsheet formula error. Actual committed volume is $464,705,883 pending Credit confirmation. The `V1_7` seed migration must hold this value as a comment pending sign-off. |
-| 41 | Facility seeding migration `V1_7__facility_seed.sql` | All 71 facility rows from the Agent Bank Summary are seeded via a new Flyway migration. Fields populated: `name`, `agent_bank`, `account_number`, `loan_amount`, `maturity_date`, `bank_status` (`Active`), `bank_status_date`. The migration uses `INSERT … ON CONFLICT (account_number) DO UPDATE` once `account_number` carries a unique constraint. Depends on the schema additions in Decision 30 being applied in the same migration or a prior one. |
-| 42 | FM Dictionary seeding migration `V1_8__fm_alias_seed.sql` covers Wells Fargo (both variants) and SVB | Aliases for `WELLS_FARGO` (columns from §10.2 and §10.3 combined — both WF variants share the same bank key) and `SILICON_VALLEY_BANK` (columns from §10.4) are pre-seeded. Separated from `V1_7` to keep facility metadata and alias seeding independent. Aliases for the 15 remaining agents are populated on first confirmed extraction via the manual remap flow. No Goldman Sachs aliases seeded — GS is not an active agent. |
+| 40 | SMBC committed volume discrepancy — confirm before seeding | The source summary shows SMBC "Totals Loan Amount: $164,705,883" but lists two facilities totalling $464,705,883 (NB PD IV $164.7M + West Street Mezz VIII $300M). The sub-total appears to reference NB PD IV only — likely a source spreadsheet formula error. Actual committed volume is $464,705,883 pending Credit confirmation. The `V1_8` seed migration must hold this value as a comment pending sign-off. |
+| 41 | Facility seeding migration `V1_8__facility_seed.sql` | All 71 facility rows from the Agent Bank Summary are seeded via a new Flyway migration. Fields populated: `name`, `agent_bank`, `account_number`, `loan_amount`, `maturity_date`, `bank_status` (`Active`), `bank_status_date`. The migration uses `INSERT … ON CONFLICT (account_number) DO UPDATE` once `account_number` carries a unique constraint. Depends on the schema additions in Decision 30 being applied in the same migration or a prior one. |
+| 42 | FM Dictionary seeding migration `V1_9__fm_alias_seed.sql` covers Wells Fargo (both variants) and SVB | Aliases for `WELLS_FARGO` (columns from §10.2 and §10.3 combined — both WF variants share the same bank key) and `SILICON_VALLEY_BANK` (columns from §10.4) are pre-seeded. Separated from `V1_8` to keep facility metadata and alias seeding independent. Aliases for the 15 remaining agents are populated on first confirmed extraction via the manual remap flow. No Goldman Sachs aliases seeded — GS is not an active agent. |
 | 43 | Template class must be auto-detected from sheet content, not inferred from agent bank identity | Wells Fargo uses both Class A (group-header rows, Tranche A/B summary, numerical ratings) and Class B (Investor Category column, single summary, Eligibility column) across different facilities. Agent bank identity alone cannot determine which parsing path to use. The extraction service must detect template class from content heuristics: (1) presence of "Tranche A" or "Tranche B" keyword in the first 15 rows → Class A; (2) "Investor Category" as a column header → Class B; (3) absence of any ratings or Advance Rate columns → Class C; (4) unmatched → Class A as default (widest column coverage). Detected class is cached in `bb_templates` via a new `template_class VARCHAR(10)` column alongside `sheet_name` and `header_row_index`, so subsequent uploads for the same agent/facility pair skip the heuristic. |
+| 44 | SQL migrations V1_3–V1_7 consolidated back into V1_1/V1_2 (2026-06-13) | While no production DB exists, incremental ALTER/CREATE migrations added maintenance overhead without the checksum-safety benefit they provide post-launch. All changes (wizard_step/shadow_bb_overrides on submissions, lp_rates table, agent_tiers 5-tier update, Agent/UBS LP Classification split, lp_records rename + column renames) were absorbed into the two base files so fresh environments initialise from a single coherent snapshot. **Rule:** once V1_1 and V1_2 have been applied to a production DB, they must never be modified. All subsequent schema changes go in new `V1_N__` or `V2_1__` files. |
+| 45 | Shadow BB screen table expanded to 28 columns — full LP record in the grid (2026-06-13) | The Shadow BB LP table was extended from 10 summary columns to the full 28-column layout defined in `pe-sub-docs/SHADOW_BB_ANALYSIS.md`: Rank, Investor Name, Parent, SPV, UBS Classification, Inst/HNW, Inv. Grade?, Agent Classification, S&P, Moody's, Fitch, LP Size ($B), Size Criteria, UBS Rate, Agent Rate, Cap. Commit., Uncalled, Agent Conc. Limit, UBS Conc. Limit, % of Commit., Called Cap., % Uncalled, % LP Called, Agent Excess, UBS Excess, Agent BB, UBS BB, Notes. Columns removed: Delta, UBS Eligible, Incl. Agent Excess Concentration is a new computed field on `ComputedLPRecord` (`agentExcessM = MAX(0, ucM − totalAllUC × agentConcPct)`) derived in `computePortfolioBB` after the portfolio total is known. `agentCls?: string` added as an optional field to the `LP` type for the Agent LP Classification column. |
 
 ---
 
@@ -775,3 +798,34 @@ The following fields are required in the `lps` table to support the full agent t
 - **Templates for 15 unclassified agents**: Bank of America, JP Morgan, Morgan Stanley, SMBC, Mizuho, BMO, Natixis, CIBC, M&T Bank, BNYM, Societe Generale, City National, UBS Bank USA, Lloyds, PNC — templates must be solicited from Credit before those facilities can enter active processing. Given the portfolio spans 71 facilities across 17 agents, a minimum of 17 distinct template formats is assumed with additional variants likely
 - **Multi-format agents beyond Wells Fargo**: Are any of the 14 unclassified agents confirmed to use multiple template formats across their facilities? Bank of America (16 facilities) and SVB (10 facilities, 5 fund types) are the most likely candidates
 - **Multi-fund umbrella LP deduplication**: For umbrella facilities (e.g., HIG LBO IV, BH III, GB&E III, IV [U]), confirm whether the LP Master carries one record per LP across all sub-funds or one record per LP per sub-fund
+
+---
+
+### How the platform handles template variants
+
+The three template classes above differ along predictable axes, each modelled as **data** in
+the BB template registry rather than per-bank parsing code:
+
+| Axis | Where configured | Example |
+|---|---|---|
+| Sheet + header row | `bb_templates.sheet_name`, `bb_template_tabs.header_row_index` | SVB has 2 summary rows above the header (`summary_rows_above_header = 2`) |
+| Tranche / tab layout | `bb_templates.tranche_count`, `bb_template_tabs.tab_role` | GS Blue Owl has 2 tranches (A + B) |
+| Column wording | `fm_aliases` (live, admin-editable via Field Mapping screen) | WF "Investor Category", SVB "Remaining Callable Capital" |
+| Classification **section rows** | `bb_template_groups` (`header_text → classification`) | GS "Rated Investors / Unrated Investors / Eligible Investors / Excluded Investors"; SVB "Excluded Investors" |
+| Sub/total rows to drop | `bb_template_tabs.skip_row_keywords` | "Subtotal", "Total", "Total included investors" |
+| Colour-coded flags | `bb_templates.has_color_flags` | GS pink = Reclassified, blue = Transferee |
+
+**Agent LP Classification as section rows.** GS and SVB express the agent's classification
+as grouping rows (not a column). `ClassificationRowDetector` in pe-sub-extraction recognises
+a row whose name cell matches a configured `header_text`, suppresses it from the LP output,
+and fills its resolved `classification` down onto the `AGENT_LP_CLASSIFICATION` field of every
+LP below it until the next header. A populated per-row classification column (e.g. WF's
+"Investor Category") overrides the inherited section value. The recognised headers are the six
+standard Agent LP Classification values plus the per-agent `classificationConfig` map that
+pe-sub-api builds from `bb_template_groups` and passes on each `POST /api/extract`.
+
+**Path to fully self-service onboarding.** The Field Mapping screen already edits `fm_aliases`
+live. The remaining step is to surface `bb_template_tabs` and `bb_template_groups` in the admin
+Configuration screen, so a Credit Administrator can register a new agent template variant —
+sheet, header row, skip keywords, column aliases, and classification sections — entirely through
+the UI, with no migration or deploy.
