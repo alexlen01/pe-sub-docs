@@ -2,3 +2,6 @@
 ~$*
 .DS_Store
 Thumbs.db
+
+# Node tooling for the docx generator
+node_modules/

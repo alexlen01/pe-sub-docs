@@ -1,0 +1,13 @@
+{
+  "name": "pe-sub-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PE Sub Platform solution-design documents and generator",
+  "scripts": {
+    "build:docx": "node scripts/generate-solution-design.mjs"
+  },
+  "devDependencies": {
+    "docx": "^9.6.1"
+  }
+}
