@@ -1787,11 +1787,12 @@ components:
 
     MatchCandidate:
       type: object
-      description: Single LP name match candidate with score and recommended action
+      description: Single LP name match candidate with score, confidence band and recommended action
       properties:
         name:   { type: string, description: LP Master name }
         score:  { type: integer, description: Combined similarity score 0–100 }
-        action: { type: string, enum: [Accept, Queue, Reject], description: Recommended action based on configured thresholds }
+        action: { type: string, enum: [Accept, Review, New], description: "Recommended action: Accept (auto-accept band), Review (queued, candidate shown), New (queued as a potential new LP)" }
+        band:   { type: string, enum: [AUTO_ACCEPT, REVIEW_HIGH, REVIEW_LOW, NO_MATCH], description: Confidence band the combined score falls into (§6.4) }
 
     MatchTestResult:
       type: object
@@ -1818,6 +1819,7 @@ components:
         status:        { type: string, description: Mirrors decision for UI display }
         isNew:         { type: boolean, description: True if no existing LP Master record matched }
         reasons:       { type: array, items: { type: string }, description: Reasons explaining the queue action (low match score, low extraction confidence, etc.) }
+        matchDetails:  { $ref: '#/components/schemas/MatchAnalysis' }
 
     LpRate:
       type: object
@@ -1830,11 +1832,38 @@ components:
         ubsConcLimitPct: { type: number, description: Per-LP concentration limit as a decimal fraction e.g. 0.075 = 7.5% }
         effectiveDate:   { type: string, format: date, description: ISO date (YYYY-MM-DD) the rate took effect }
 
+    ScoredCandidate:
+      type: object
+      description: One scored LP Master candidate with its per-metric breakdown (§6.5)
+      properties:
+        name:     { type: string,  description: LP Master candidate name }
+        jw:       { type: integer, description: Jaro-Winkler similarity 0–100 }
+        lev:      { type: integer, description: Normalised Levenshtein similarity 0–100 }
+        combined: { type: integer, description: Weighted combined score 0–100 }
+        band:     { type: string,  enum: [AUTO_ACCEPT, REVIEW_HIGH, REVIEW_LOW, NO_MATCH] }
+
+    MatchAnalysis:
+      type: object
+      description: Persisted match_details payload driving the Match Analysis panel (§6.5)
+      properties:
+        agentName:  { type: string, description: Original extracted agent name }
+        normalized: { type: string, description: Agent name after the normalisation pipeline }
+        band:       { type: string, enum: [AUTO_ACCEPT, REVIEW_HIGH, REVIEW_LOW, NO_MATCH], description: Winning candidate's confidence band }
+        candidates:
+          type: array
+          description: Ranked top-5 LP Master candidates, highest combined score first
+          items: { $ref: '#/components/schemas/ScoredCandidate' }
+
     MatchThresholds:
       type: object
+      description: >
+        Four-band confidence thresholds (§6.4). autoAccept ≥ band is committed automatically;
+        reviewQueue..autoAccept-1 is high-confidence review; noMatch..reviewQueue-1 is low-confidence
+        review; below noMatch is queued as a potential new LP. Nothing is auto-rejected.
       properties:
-        autoAccept:  { type: number, description: Score at or above which matches are auto-accepted, example: 90 }
-        reviewQueue: { type: number, description: Score at or above which matches enter the review queue, example: 70 }
+        autoAccept:  { type: number, description: Score at or above which matches are auto-accepted, example: 95 }
+        reviewQueue: { type: number, description: Score at or above which matches enter high-confidence review, example: 80 }
+        noMatch:     { type: number, description: Score below which a row is queued as a potential new LP, example: 50 }
 
     # ── Config ─────────────────────────────────────────────────────────────────
 
