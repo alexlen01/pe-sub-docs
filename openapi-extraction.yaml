@@ -1,0 +1,256 @@
+openapi: 3.0.3
+
+info:
+  title: PE Subscription Platform — Extraction Service API
+  description: |
+    REST API for `pe-sub-extraction` (Spring Boot 3.5 / Java 21), the document
+    extraction service of the PE Subscription Borrowing Base platform.
+
+    **Role**
+    Parses uploaded agent borrowing-base schedules (XLSX / XLS / CSV), detects the bank
+    template and header row, maps columns to canonical LP fields via the alias dictionary,
+    and returns structured LP records with per-field confidence scores.
+
+    **How it is called**
+    `pe-sub-api` (port 3001) calls `POST /api/extract` with `forward=false` on every upload
+    and re-extraction, receives the `ExtractionResult` directly, and persists it. The UI never
+    calls this service directly. When `forward=true`, the service instead POSTs the result to
+    `pe-sub-api`'s `/api/lps/ingest` endpoint (standalone testing only).
+
+    Core API spec for `pe-sub-api`: `pe-sub-docs/openapi.yaml`.
+  version: 0.1.0
+  contact:
+    name: PE Sub Platform Team
+
+servers:
+  - url: http://localhost:3002
+    description: Development (internal service; ClusterIP-only in Kubernetes)
+
+tags:
+  - name: health
+    description: Service health check
+  - name: extraction
+    description: Agent schedule parsing and LP record extraction
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+
+paths:
+
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      operationId: extractionHealthCheck
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+
+  /api/extract:
+    post:
+      tags: [extraction]
+      summary: Parse an agent schedule and extract LP records
+      description: >
+        Accepts a multipart upload of an agent borrowing-base schedule. The pipeline runs:
+        Parser → TemplateDetector → HeaderMatcher → LpRecordExtractor. Null markers
+        (`N/A`, `N/R`, `NA`, `NR`) are treated as missing; summary rows (`Total`, `Grand Total`,
+        `Subtotal`, …) are filtered. `sheetNameHint` / `headerRowHint` override heuristic detection
+        when provided; `aliasConfig` (the live FM Dictionary from `pe-sub-api`) overrides built-in
+        aliases. A row's `requiresReview` is set `true` when any field is missing or a header's
+        confidence is below 0.70.
+      operationId: extract
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [facilityId, file]
+              properties:
+                facilityId:
+                  type: string
+                  description: Target facility ID (used when forwarding to pe-sub-api)
+                file:
+                  type: string
+                  format: binary
+                  description: XLSX, XLS, or CSV agent schedule (max 50 MB)
+                forward:
+                  type: boolean
+                  default: true
+                  description: >
+                    When true, POST the result to `pe-sub-api/api/lps/ingest`. `pe-sub-api`
+                    always passes `false` and persists the returned result itself.
+                aliasConfig:
+                  type: string
+                  description: >
+                    JSON alias map built from the live FM Dictionary; takes precedence over the
+                    built-in alias list when provided.
+                sheetNameHint:
+                  type: string
+                  description: Preferred sheet name; bypasses the sheet heuristic when provided.
+                headerRowHint:
+                  type: integer
+                  description: Known zero-based header row index; bypasses header detection when provided.
+                classificationConfig:
+                  type: string
+                  description: >
+                    JSON `{ "header text": "Agent LP Classification" }` map for templates that group
+                    LPs into classification section rows; merged on top of the standard classification
+                    values, which are always recognised.
+      responses:
+        '200':
+          description: Structured extraction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionResult'
+        '400':
+          description: Malformed request (e.g. missing file or facilityId)
+        '500':
+          description: Parsing failure (corrupt or unsupported file)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+components:
+  schemas:
+
+    ExtractionResult:
+      type: object
+      description: Top-level extraction payload returned to pe-sub-api.
+      properties:
+        template:
+          $ref: '#/components/schemas/TemplateDetection'
+        records:
+          type: array
+          items: { $ref: '#/components/schemas/ExtractedLpRecord' }
+        totalFlagged:
+          type: integer
+          description: Count of records with `requiresReview = true`
+        fieldMappings:
+          type: array
+          items: { $ref: '#/components/schemas/FieldMapping' }
+          description: Recognised columns mapped to canonical fields
+        unrecognizedColumns:
+          type: array
+          items: { type: string }
+          description: >
+            Header texts that scored below the 0.70 recognition threshold. Surfaced for manual
+            remap in the UI — never silently dropped.
+
+    TemplateDetection:
+      type: object
+      properties:
+        format:
+          $ref: '#/components/schemas/TemplateFormat'
+        version:
+          type: string
+          nullable: true
+          description: Reserved for future template versioning
+        headerRowIndex:
+          type: integer
+          description: Zero-based index of the detected header row
+        sheetName:
+          type: string
+          nullable: true
+          description: Name of the sheet the data was extracted from
+
+    ExtractedLpRecord:
+      type: object
+      properties:
+        rowIndex:
+          type: integer
+          description: Zero-based source row index in the sheet
+        fields:
+          type: object
+          description: >
+            Canonical field key → extracted value with confidence. Common keys: `INVESTOR_NAME`,
+            `COMMITMENT`, `UNCALLED`, `AUM`, `AGENT_RATE`, `CONCENTRATION_LIMIT`,
+            `AGENT_LP_CLASSIFICATION`, plus rating/identity keys present in the template.
+          additionalProperties:
+            $ref: '#/components/schemas/FieldExtraction'
+        requiresReview:
+          type: boolean
+          description: True when any field is missing or a header confidence is below 0.70
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ExtractionWarning' }
+
+    FieldExtraction:
+      type: object
+      description: One extracted cell value with provenance and confidence.
+      properties:
+        value:
+          type: string
+          nullable: true
+          description: Extracted value; null for null markers / missing cells
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: >
+            Header-match confidence: exact alias = 1.0; ≥ 80% word overlap = 0.75;
+            ≥ 70% word overlap = 0.60. Below 0.70 is considered low confidence.
+        sourceHeader:
+          type: string
+          nullable: true
+          description: The original column header this value was read from
+
+    FieldMapping:
+      type: object
+      properties:
+        extractedHeader:
+          type: string
+          description: Column header text from the document
+        canonicalField:
+          type: string
+          description: Canonical field key the header resolved to
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+
+    ExtractionWarning:
+      type: object
+      properties:
+        field:
+          type: string
+          description: Canonical field key the warning concerns
+        message:
+          type: string
+          description: Human-readable explanation (e.g. "value missing")
+        rowIndex:
+          type: integer
+          description: Source row the warning applies to
+
+    TemplateFormat:
+      type: string
+      description: Detected bank template format. `UNKNOWN` when no format matches.
+      enum:
+        - CITIBANK
+        - JPM
+        - GOLDMAN_SACHS
+        - BARCLAYS
+        - BANK_OF_AMERICA
+        - WELLS_FARGO
+        - CITIZENS_FINANCIAL
+        - PNC_BANK
+        - FIFTH_THIRD
+        - HUNTINGTON
+        - WHITE_OAK
+        - ARES
+        - MIDCAP_FINANCIAL
+        - INTERNAL
+        - UNKNOWN

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.7.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.7.1\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -32,7 +32,21 @@
                   "host": ["{{base}}"],
                   "path": ["health"]
                 },
-                "description": "Returns {\"status\":\"UP\"} when the service is healthy."
+                "description": "Returns {\"status\":\"ok\"} when the service is healthy. Served at the host root, outside the /api prefix."
+              },
+              "response": []
+            },
+            {
+              "name": "Ping (API liveness)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/ping",
+                  "host": ["{{base}}"],
+                  "path": ["api", "ping"]
+                },
+                "description": "Returns {\"status\":\"ok\"}. Same payload as /health but served under the /api prefix."
               },
               "response": []
             }
@@ -206,6 +220,25 @@
               "response": []
             },
             {
+              "name": "Save classification & rate edits (batch)",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"cls\": \"Rated\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90.0,\n      \"ubsConcLimitPct\": 7.5\n    }\n  ]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/lps/classification",
+                  "host": ["{{base}}"],
+                  "path": ["api", "lps", "classification"]
+                },
+                "description": "The Shadow BB screen's Save. Rows match persisted records by (facilityId, name); unmatched names are ignored. LP fields (cls, sp, mdy, fitch, inc, uc) update in place; ubsAdvRatePct/ubsConcLimitPct (percentages) upsert into lp_rates for the period. effectiveDate (YYYY-MM) defaults to current month. Returns { updated }."
+              },
+              "response": []
+            },
+            {
               "name": "Ingest extracted LP records",
               "request": {
                 "method": "POST",
@@ -221,6 +254,42 @@
                   "path": ["api", "lps", "ingest"]
                 },
                 "description": "Called internally by pe-sub-api after extraction. Each row is matched against the facility's LP records. Actions: Updated (fields written), Queued (credit officer review needed), Skipped (no match)."
+              },
+              "response": []
+            },
+            {
+              "name": "List LP rates (as of period)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/lps/rates?effective_date=2026-05",
+                  "host": ["{{base}}"],
+                  "path": ["api", "lps", "rates"],
+                  "query": [
+                    { "key": "effective_date", "value": "2026-05", "description": "Period month (YYYY-MM); most recent rate per LP on or before the last day of this month. Omit to default to today." }
+                  ]
+                },
+                "description": "Returns the most-recent lp_rates row per LP as of the requested period. Used by the Run Shadow BB screen to pre-fill UBS Adv Rate and Conc. Limit. ubsAdvRatePct / ubsConcLimitPct are decimal fractions (0.9 = 90%)."
+              },
+              "response": []
+            },
+            {
+              "name": "Batch upsert LP rates",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"effectiveDate\": \"2026-05\",\n  \"rates\": [\n    {\n      \"lpName\": \"CalPERS\",\n      \"classification\": \"Rated\",\n      \"ubsAdvRatePct\": 0.90,\n      \"ubsConcLimitPct\": 0.075,\n      \"source\": \"BATCH_FEED\"\n    }\n  ]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/lps/rates/batch",
+                  "host": ["{{base}}"],
+                  "path": ["api", "lps", "rates", "batch"]
+                },
+                "description": "Bulk upsert of lp_rates for one effectiveDate (YYYY-MM). LP lookup is by case-insensitive investor name; unmatched names are skipped. Idempotent. Returns 201 with { saved: <count> }. Rates are decimal fractions 0.0–1.0."
               },
               "response": []
             }
@@ -447,6 +516,20 @@
                   "path": ["api", "submissions", "{{submissionId}}", "shadow-bb-state"]
                 },
                 "description": "Advances submission to wizardStep=5. Optionally persists per-LP classification/rate overrides (keyed by LP id) in shadow_bb_overrides. Called on 'Commit Decisions' (no overrides) and on 'Save' (with overrides) on the Run Shadow BB screen. Returns updated Submission."
+              },
+              "response": []
+            },
+            {
+              "name": "Complete submission",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/complete",
+                  "host": ["{{base}}"],
+                  "path": ["api", "submissions", "{{submissionId}}", "complete"]
+                },
+                "description": "Accepts the Shadow BB run: submission → Processed (wizardStep=6), facility → Active with lastRunAt stamped. Idempotent — calling twice is safe. Returns the updated Submission."
               },
               "response": []
             },
@@ -837,6 +920,48 @@
                 "description": "Replaces the full matching_config value. The ?section= param is used only in the audit log detail. Writes a 'Match Config Change' audit event."
               },
               "response": []
+            },
+            {
+              "name": "Get wizard config",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/config/wizard",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "wizard"]
+                },
+                "description": "Returns the wizard_config JSON from the DB cache. Returns 404 until the wizard_config row is seeded — the UI falls back to its local wizardConfig.ts constants."
+              },
+              "response": []
+            },
+            {
+              "name": "Get audit config",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/config/audit",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "audit"]
+                },
+                "description": "Returns the audit_config JSON from the DB cache. Returns 404 until the audit_config row is seeded — the UI falls back to its local auditConfig.ts constants."
+              },
+              "response": []
+            },
+            {
+              "name": "Get reports config",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/config/reports",
+                  "host": ["{{base}}"],
+                  "path": ["api", "config", "reports"]
+                },
+                "description": "Returns the report_config JSON from the DB cache. Returns 404 until the report_config row is seeded — the UI falls back to its local reportConfig.ts constants."
+              },
+              "response": []
             }
           ]
         },
@@ -907,7 +1032,8 @@
               "raw": "{{extractionBase}}/health",
               "host": ["{{extractionBase}}"],
               "path": ["health"]
-            }
+            },
+            "description": "Returns {\"status\":\"UP\"} when the extraction service is healthy. Served at the host root, outside the /api prefix."
           },
           "response": []
         },
@@ -924,7 +1050,8 @@
                 { "key": "forward",       "value": "false",          "type": "text",  "description": "Set true to forward result to pe-sub-api/lps/ingest", "disabled": true },
                 { "key": "aliasConfig",   "value": "",               "type": "text",  "description": "JSON alias map from FM Dictionary — overrides built-in aliases when provided", "disabled": true },
                 { "key": "sheetNameHint", "value": "",               "type": "text",  "description": "Preferred sheet name; bypasses sheet heuristic when provided", "disabled": true },
-                { "key": "headerRowHint", "value": "",               "type": "text",  "description": "Known header row index; bypasses header detection when provided", "disabled": true }
+                { "key": "headerRowHint", "value": "",               "type": "text",  "description": "Known header row index; bypasses header detection when provided", "disabled": true },
+                { "key": "classificationConfig", "value": "",        "type": "text",  "description": "JSON { \"header text\": \"Agent LP Classification\" } map for templates that group LPs into classification section rows", "disabled": true }
               ]
             },
             "url": {
@@ -940,7 +1067,7 @@
     },
     {
       "name": "Planned — Not Yet Implemented",
-      "description": "Endpoints not yet implemented. Requests will return 404 until live. Sync source: pe-sub-docs/openapi.yaml v0.7.0.",
+      "description": "Endpoints not yet implemented. Requests will return 404 until live. Sync source: pe-sub-docs/openapi.yaml v0.7.1.",
       "item": [
         {
           "name": "[PLANNED] Config — classification",

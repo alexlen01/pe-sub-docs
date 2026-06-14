@@ -115,7 +115,7 @@ To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the 
 | id | serial PK | |
 | email | varchar(255) unique | |
 | name | varchar(255) | |
-| role | varchar(50) | `Credit Administrator` \| `Supervisor` |
+| role | varchar(50) | `Analyst` \| `Account/Transaction Manager` |
 | created_at | timestamp | |
 
 ### `facilities`
@@ -125,7 +125,7 @@ To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the 
 | id | serial PK | |
 | name | varchar(255) unique | |
 | agent_bank | varchar(255) | Maps to `template_format` identifier |
-| status | varchar(50) | Workflow status: `Not Started` \| `In Progress` \| `Needs Review` \| `Certified` \| `Pending` |
+| status | varchar(50) | Workflow status: `Not Started` \| `In Progress` \| `Needs Review` \| `Active` \| `Pending` |
 | conc_limit_m | numeric(10,2) | Per-LP concentration limit in $M; default 25 |
 | last_run_at | timestamp nullable | Set on each Shadow BB run |
 | created_at / updated_at | timestamp | |
@@ -351,7 +351,7 @@ API test collection: `pe-sub-docs/pe-sub-platform.postman_collection.json` (Post
 
 #### `POST /api/lps/ingest` — actions
 
-For each extracted LP row, `LpIngestService` runs `matchBestInList` against the facility's LP names:
+`LpIngestService` builds a `Prepared` index over the facility's LP names once (`prepare`), then for each extracted LP row runs `matchBest` against it (exact-match fast path + length-band pruning; see §5 Matching and Decision 46):
 
 | Action | Condition | Effect |
 |--------|-----------|--------|
@@ -450,6 +450,8 @@ Template format is auto-detected from keywords in the first 5 rows. Header row i
 
 **Matching algorithm (`MatchingService`):** Jaro-Winkler + Levenshtein, combined as `jwWeight × JW + levWeight × Lev`. Both strings are normalised before scoring: abbreviation expansion → case fold → legal suffix stripping → punctuation removal. All parameters are read live from `matching_config` in the DB cache.
 
+**Performance — `Prepared` index (Decision 46):** matching an upload's worth of rows against the bank-wide LP Master is optimised by building an immutable `Prepared` index once per upload (`prepare(names)`), then calling `matchBest(name, prepared)` per row. `Prepared` holds: the candidate list normalised once (with abbreviation/suffix regexes pre-compiled into `Config`); a `normalized → first-original` exact-match map (an identical name resolves in O(1) at score 100, e.g. re-uploading the same Agent BB); and a length-sorted index enabling a decision-safe length-band prefilter that skips candidates which provably cannot reach the review threshold. `buildMatchQueueEntries` (the `confirm` step) scores rows in parallel via `parallelStream()` (CPU-bound, row-independent, `Prepared` immutable). `MatchingService.test()` still does an exhaustive single-input scan; `LpIngestService.ingest` uses the same `prepare`/`matchBest` path (facility-scoped, sequential).
+
 ### Configuration
 
 | Method | Path | Status | Description |
@@ -490,7 +492,40 @@ Reports screen tabs correspond 1:1 to Step 6 outputs:
 
 ### Scheduled Batch Job
 
-One system-managed job planned: runs on the 1st of each month, resets all active facility statuses to `Not Started`. The `snapshot-freq` global setting (default 30 days) is intended to drive automatic Shadow BB recalculation scheduling in `pe-sub-jobs`. Neither job is implemented yet.
+One system-managed job planned: runs on the 1st of each month, resets all `Active` facility statuses to `Not Started`. The `snapshot-freq` global setting (default 30 days) is intended to drive automatic Shadow BB recalculation scheduling in `pe-sub-jobs`. Neither job is implemented yet.
+
+---
+
+## 6a. Business Process Clarifications
+
+### Shadow BB — When It Is Prepared
+
+A Shadow BB is only prepared when a **credit decision is required**: renewal, amendment, or new origination. It is **not** produced for every agent BB received. Two analysts (in different locations) independently prepare the Shadow BB. Once complete, the Account Manager reviews for accuracy.
+
+**Workflow and approval routing** (e.g. formal sign-off steps, escalation paths) are **out of scope for Phase 1**. Record as a future consideration for Phase 2.
+
+**No internally produced Shadow BB certificate is required.** The facility status changes to `Active` once the Shadow BB run is accepted — there is no separate certificate step or document submission.
+
+**Facility workflow status values:**
+
+| Status | Meaning |
+|--------|---------|
+| `Not Started` | No Shadow BB submission processed for this cycle |
+| `In Progress` | Agent BB uploaded; analyst is working through matching, classification, and Shadow BB |
+| `Needs Review` | Submission has unresolved LP matches or eligibility issues requiring credit officer action |
+| `Active` | Shadow BB completed and accepted for this cycle |
+
+### LP Master — Data Sources and Governance
+
+- **AUM and ratings** are sourced manually by analysts from internet searches, rating agency websites (S&P, Moody's, Fitch), and **Pitchbook** (web-based LP intelligence service).
+- **Two individuals** on the PE Sub Management team compile and maintain the LP Master for reporting purposes.
+- **No authorization is required** to create a new LP record. The only prerequisites are: (a) the LP must appear in the agent BB, and (b) all figures must be verified as accurate.
+
+### Concentration Limits
+
+- Concentration limits are always assigned at the **individual LP level**.
+- Some facilities may additionally carry an **overall class concentration limit** (e.g. a cap on total exposure to Unrated LPs) on top of the per-LP limit.
+- The concentration limit is calculated against **total uncalled capital**, not facility size.
 
 ---
 
@@ -526,7 +561,7 @@ One system-managed job planned: runs on the 1st of each month, resets all active
 | 29 | ExtractionPreview state initialises to empty arrays, not prototype data | All five stateful arrays in ExtractionPreview (extracted, fieldMap, docRec, canonicals, unrecog) are initialised to `[]`. Initialising with prototype constants meant any API failure left prototype data visible — the catch block only set `loadError` without clearing state. Prototype data is returned by the service layer when `screenMode === 'prototype'`; the component never holds it directly |
 | 25 | Null-marker filtering at two levels | N/A, N/R, NA, NR values are filtered at extraction time: (a) row-level — entire row skipped if investor name is a null marker; (b) field-level — cell value stored as null with a "value missing" warning |
 | 26 | `CANONICAL_META` in SubmissionController for field-map labelling | A static map in `SubmissionController.java` keys extraction_key or canonical name to `(canonical, group)`. Used to label field-map rows returned by `GET /{id}/field-map`. Non-extractable fields are keyed by canonical name; extractable fields by extraction_key. Without this map, matched fields appeared in group "Other" |
-| 27 | Two-role RBAC: Credit Administrator and Supervisor | Consolidated from three roles (Credit Officer, Supervisor, Admin). Credit Administrator absorbs all Credit Officer day-to-day operations and all Admin system configuration actions (Configuration Studio, Match Thresholds, Field Mapping, User Management). Supervisor retains escalation authority: override any active workflow step regardless of ownership, reassign submission ownership, full cross-facility audit trail, and LP classification override on non-owned submissions. Configuration edits are Credit Administrator-only; Supervisor has view-only access to configuration. See `pe-sub-platform/docs/RBAC_ROLES.md` for the full permission matrix and Supervisor-specific action definitions |
+| 27 | Two-role RBAC: Analyst and Account/Transaction Manager | Consolidated from three roles (Credit Officer, Supervisor, Admin). Analyst performs day-to-day Shadow BB construction and inputs: uploads Agent BBs, resolves LP match queues, runs Shadow BB calculations, manages credit agreement configuration, and edits LP Master records. Account/Transaction Manager holds operational ownership and 4-eye review authority: can act on any submission regardless of ownership, reassign workflow ownership, view the full cross-facility audit trail, and override LP classifications on non-owned submissions. Configuration edits are Analyst-only; Account/Transaction Manager has view-only access to configuration. See `pe-sub-platform/docs/RBAC_ROLES.md` for the full permission matrix |
 | 30 | `LP Classification` split into Agent LP Classification + UBS LP Classification (2026-06-12) | The single canonical field conflated the agent's own category label (lifted verbatim from the Agent BB doc) with UBS's computed advance-rate tier. Split into **Agent LP Classification** (raw input, extraction_key `AGENT_LP_CLASSIFICATION`; standard values: Rated Included, Non-Rated Included, Designated Institutional, Designated PWM, Largest 5 Designated, Aggregate Designated PWM) and **UBS LP Classification** (derived tier: Rated / Unrated >2bn / Unrated 1–2bn / Eligible / Excluded). Applied across `fm_canonical_fields` (V1_6), pe-sub-ui + prototype Field Mapping Dictionaries, and the extraction `AGENT_LP_CLASSIFICATION` key |
 | 31 | Agent LP Classification section rows handled in extraction, configured via `bb_template_groups` | Agent templates frequently group LPs into classification sections using header rows (e.g. "Designated PWM") rather than a per-row column, interleaving sub/total rows. `ClassificationRowDetector` (pe-sub-extraction) recognises these via the standard values plus a per-agent `classificationConfig` JSON (`header_text → classification`) built by `ClassificationConfigBuilder` from `bb_template_groups`, fills the value down onto LPs beneath the header, and lets a populated per-row column override the inherited value. `bb_template_groups.header_text` stores the agent document's literal grouping text; `classification` stores the resolved canonical value. Onboarding a new template variant is configuration (sheet/header/skip-keywords/aliases/sections), not code — see §8 |
 
@@ -770,6 +805,7 @@ The following fields are required in the `lps` table to support the full agent t
 | 43 | Template class must be auto-detected from sheet content, not inferred from agent bank identity | Wells Fargo uses both Class A (group-header rows, Tranche A/B summary, numerical ratings) and Class B (Investor Category column, single summary, Eligibility column) across different facilities. Agent bank identity alone cannot determine which parsing path to use. The extraction service must detect template class from content heuristics: (1) presence of "Tranche A" or "Tranche B" keyword in the first 15 rows → Class A; (2) "Investor Category" as a column header → Class B; (3) absence of any ratings or Advance Rate columns → Class C; (4) unmatched → Class A as default (widest column coverage). Detected class is cached in `bb_templates` via a new `template_class VARCHAR(10)` column alongside `sheet_name` and `header_row_index`, so subsequent uploads for the same agent/facility pair skip the heuristic. |
 | 44 | SQL migrations V1_3–V1_7 consolidated back into V1_1/V1_2 (2026-06-13) | While no production DB exists, incremental ALTER/CREATE migrations added maintenance overhead without the checksum-safety benefit they provide post-launch. All changes (wizard_step/shadow_bb_overrides on submissions, lp_rates table, agent_tiers 5-tier update, Agent/UBS LP Classification split, lp_records rename + column renames) were absorbed into the two base files so fresh environments initialise from a single coherent snapshot. **Rule:** once V1_1 and V1_2 have been applied to a production DB, they must never be modified. All subsequent schema changes go in new `V1_N__` or `V2_1__` files. |
 | 45 | Shadow BB screen table expanded to 28 columns — full LP record in the grid (2026-06-13) | The Shadow BB LP table was extended from 10 summary columns to the full 28-column layout defined in `pe-sub-docs/SHADOW_BB_ANALYSIS.md`: Rank, Investor Name, Parent, SPV, UBS Classification, Inst/HNW, Inv. Grade?, Agent Classification, S&P, Moody's, Fitch, LP Size ($B), Size Criteria, UBS Rate, Agent Rate, Cap. Commit., Uncalled, Agent Conc. Limit, UBS Conc. Limit, % of Commit., Called Cap., % Uncalled, % LP Called, Agent Excess, UBS Excess, Agent BB, UBS BB, Notes. Columns removed: Delta, UBS Eligible, Incl. Agent Excess Concentration is a new computed field on `ComputedLPRecord` (`agentExcessM = MAX(0, ucM − totalAllUC × agentConcPct)`) derived in `computePortfolioBB` after the portfolio total is known. `agentCls?: string` added as an optional field to the `LP` type for the Agent LP Classification column. |
+| 46 | Name matching optimised — exact-match fast path + length-band candidate pruning + parallel scoring (2026-06-13) | **Symptom:** severe slowdown when the *same* Agent BB was uploaded a second time (reported on Blue Owl GP Stakes V). **Root cause:** `MatchingService.buildMatchQueueEntries` (the `POST /{id}/confirm` step) loads the **bank-wide** LP Master name list (`LpRepository.findAllDistinctNames()`) and scored every extracted row against every master name with combined Jaro-Winkler + Levenshtein — O(rows × names) — and (a) re-normalised the whole candidate list for *every* row, while (b) `normalize()` called `String.replaceAll(...)` per abbreviation and per legal suffix, recompiling a regex `Pattern` on each call → O(rows × names × (#abbrev + #suffix)) regex compilations. The second upload is worse because the first upload's `commitAcceptedMatches` inserts that BB's investors as new LP Master records, so the re-upload re-matches every row against a list grown by exactly those names — both factors of the product jump at once. **Fix** — four layers behind an immutable `MatchingService.Prepared` index built once per upload: (1) **regex pre-compilation** — abbreviation/suffix patterns compiled once into `Config`, plus static punctuation/whitespace patterns; the candidate list is normalised once at `prepare()`, not per row; (2) **exact-match fast path** — `Prepared` holds a `normalized → first-original` map, so a row whose name already exists verbatim in master (the duplicate-upload case) resolves in O(1) at score 100 / `Accept` with no fuzzy scoring, collapsing the dominant cost of the reported scenario; (3) **length-band pruning** — candidates indexed sorted by normalised length; given weights `jwWeight·jw + levWeight·lev` and review threshold T, a candidate whose length is outside `[(1−f)·a, a/(1−f)]` with `f = 1 − (T − jwWeight)/levWeight` cannot reach T even with a perfect Jaro-Winkler, so it is skipped without changing any Accept/Queue/Reject decision or matched name; auto-disabled when the math admits no safe pruning (e.g. `jwWeight ≥ T`); (4) **parallel scoring** — `buildMatchQueueEntries` scores rows via `parallelStream()`; fuzzy matching is CPU-bound and each row is independent, and `Prepared` is immutable so this is thread-safe. Deliberately uses the common ForkJoinPool (platform threads), **not** virtual threads, which would oversubscribe cores on CPU-bound work; persistence stays out of the parallel section. **Bank-wide matching is unchanged** — every existing LP record is still a candidate; only provably useless work is skipped. Tie-break preserved (lowest candidate index wins, matching a sequential full scan); the only observable difference is that the displayed `match_score` of an ultimately below-threshold "New LP" row may differ, since hopeless candidates are not scored — the decision and matched name are identical. `LpIngestService.ingest` inherits layers 1–3 through `prepare`/`matchBest` (left sequential — its loop interleaves DB writes). Guarded by `MatchingServiceTest` (exact-duplicate fast path; length-band-vs-exhaustive-scan equivalence property test). Supersedes the per-row `matchBestInList` usage from Decision 19 (the method remains as a thin wrapper over `prepare`/`matchBest`). **Future option:** a token/trigram inverted-index blocking key prunes far more aggressively but is only heuristically decision-safe, so it was left out of this pass. |
 
 ---
 
@@ -826,6 +862,6 @@ pe-sub-api builds from `bb_template_groups` and passes on each `POST /api/extrac
 
 **Path to fully self-service onboarding.** The Field Mapping screen already edits `fm_aliases`
 live. The remaining step is to surface `bb_template_tabs` and `bb_template_groups` in the admin
-Configuration screen, so a Credit Administrator can register a new agent template variant —
+Configuration screen, so an Analyst can register a new agent template variant —
 sheet, header row, skip keywords, column aliases, and classification sections — entirely through
 the UI, with no migration or deploy.
