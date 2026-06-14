@@ -690,11 +690,12 @@ paths:
   /submissions/{id}/complete:
     post:
       tags: [submissions]
-      summary: Accept Shadow BB results — marks submission Processed and facility Certified
+      summary: Accept Shadow BB results — marks submission Processed and facility Active
       description: >
         Called by the Run Shadow BB screen after the credit officer reviews and accepts the
         calculation results. Sets `submission.status = "Processed"`, `submission.wizardStep = 6`,
-        `facility.status = "Certified"`, and stamps `facility.lastRunAt` to the current time.
+        `facility.status = "Active"`, and stamps `facility.lastRunAt` to the current time.
+        No Shadow BB certificate is produced — accepting the run is sufficient (see OPEN_QUESTIONS R2/R3).
         Idempotent — calling it more than once is safe and returns the same state.
         Writes a `Shadow BB Completed` audit event.
       operationId: completeSubmission
@@ -1392,7 +1393,7 @@ components:
 
     FacilityStatus:
       type: string
-      enum: [Not Started, In Progress, Needs Review, Certified, Pending, Active]
+      enum: [Not Started, In Progress, Needs Review, Active, Pending]
 
     LPClassification:
       type: string
