@@ -500,7 +500,7 @@ One system-managed job planned: runs on the 1st of each month, resets all `Activ
 
 ### Shadow BB — When It Is Prepared
 
-A Shadow BB is only prepared when a **credit decision is required**: renewal, amendment, or new origination. It is **not** produced for every agent BB received. Two analysts (in different locations) independently prepare the Shadow BB. Once complete, the Account Manager reviews for accuracy.
+A Shadow BB is only prepared when a **credit decision is required**: renewal, amendment, or new origination. It is **not** produced for every agent BB received. Two analysts (in different locations) independently prepare the Shadow BB. Once complete, the Account/Transaction Manager reviews for accuracy (4-eye check).
 
 **Workflow and approval routing** (e.g. formal sign-off steps, escalation paths) are **out of scope for Phase 1**. Record as a future consideration for Phase 2.
 
@@ -526,6 +526,27 @@ A Shadow BB is only prepared when a **credit decision is required**: renewal, am
 - Concentration limits are always assigned at the **individual LP level**.
 - Some facilities may additionally carry an **overall class concentration limit** (e.g. a cap on total exposure to Unrated LPs) on top of the per-LP limit.
 - The concentration limit is calculated against **total uncalled capital**, not facility size.
+
+---
+
+## 6b. Roles & Access Control (RBAC)
+
+The platform operates with **two roles** — **Analyst** and **Account/Transaction Manager** — consolidated from three legacy roles (Credit Officer, Supervisor, Admin; see Decision 27). Workflow ownership is per-submission: the Analyst who uploads an Agent BB owns all active steps for that submission until it is certified or reassigned by an Account/Transaction Manager.
+
+- **Analyst** — day-to-day operator and system configurator. Uploads Agent BBs, resolves LP match queues, runs Shadow BB calculations, edits LP Master classifications, and manages credit agreement configuration. Owns submissions they upload; can view any colleague's submission read-only.
+- **Account/Transaction Manager** — operational ownership and 4-eye review authority. Performs the 4-eye check on completed Shadow BB analyses, can act on **any** submission regardless of ownership, reassigns workflow ownership, and has full cross-facility read and audit-trail visibility. Does **not** perform day-to-day configuration changes.
+
+| Capability | Analyst (owner) | Analyst (other) | Account/Transaction Manager |
+|---|:---:|:---:|:---:|
+| Upload Agent BB / View Shadow BB / Export Certificate | ✓ | ✓ | ✓ |
+| Review Extraction / Resolve Match Queue / Run Shadow BB | ✓ | view | ✓ |
+| LP Master (edit classification) | ✓ | — | ✓ |
+| Configuration / Match Thresholds / Field Mapping (edit) | ✓ | ✓ | — |
+| Reassign ownership / Override any active step | — | — | ✓ |
+| Audit Trail | own facilities | — | all facilities |
+| User management | ✓ | ✓ | — |
+
+**Source of truth:** [`pe-sub-platform/docs/RBAC_ROLES.md`](../pe-sub-platform/docs/RBAC_ROLES.md) holds the full permission matrix, Dashboard Resume-CTA mapping, and future auth-integration notes. DB role values are stored verbatim as `'Analyst'` | `'Account/Transaction Manager'` (see the `users` table in §4). Authentication is not yet implemented (Gap G6) — UI gates are a UX aid, not a security boundary; all write endpoints will enforce ownership + role checks server-side.
 
 ---
 
