@@ -1626,12 +1626,12 @@ components:
         pctCalled:          { type: number }
         totalAllUncalled:   { type: number, description: Total uncalled across all LPs in dollars }
         totalLPs:           { type: integer }
-        pctInstitutional:   { type: number }
-        pctHNW:             { type: number }
+        pctInstitutional:   { type: number, description: Institutional LPs' uncalled share of total uncalled }
+        pctHNW:             { type: number, description: HNW LPs' uncalled share of total uncalled }
         pctTop10:           { type: number, description: Top-10 LPs share of total uncalled }
         pctTop20:           { type: number }
-        igRatio:            { type: number }
-        pctUncalledGt2M:    { type: number, description: Fraction of LPs with >$2M uncalled }
+        igRatio:            { type: number, description: Investment-grade LPs' uncalled share of total uncalled }
+        pctUncalledGt25bnAum: { type: number, description: Uncalled share from LPs with AUM > $25bn }
         # Borrowing Base table
         facilitySize:        { type: number }
         ubsParticipation:    { type: number }
