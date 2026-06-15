@@ -18,7 +18,6 @@ This document defines the data model, column semantics, and summary table struct
 | **Institutional vs HNW** | Manual Input | `Institutional` or `HNW` |
 | **Investment Grade?** | Manual Input | `Yes` or `No` |
 | **LP Classification** | Manual Input | One of: Rated Investors, Unrated Investors, Eligible Investors, Excluded Investors |
-| **Notes** | Manual Input | Free-text analyst notes |
 | **S&P** | Manual Input | S&P credit rating string (e.g., `AA+`, `A-`) |
 | **Moody's** | Manual Input | Moody's credit rating string (e.g., `Aa1`, `A3`) |
 | **Fitch** | Manual Input | Fitch credit rating string (e.g., `AA-`) |
@@ -40,12 +39,10 @@ This document defines the data model, column semantics, and summary table struct
 | **UBS Borrowing Base** | Calculated | UBS Advance Rate × UBS Eligible Uncalled Capital |
 | **High Quality** | Calculated | Flagged `Yes` when UBS Advance Rate = `0.90` |
 | **UBS Included** | Calculated | `Included` if UBS BB > 0 |
-| **Commitment** | Calculated | Capital Commitments (mirror column) |
 | **Cmt. %** | Calculated | LP commitment ÷ total commitment |
-| **UnCalled Capital** | Calculated | Uncalled Capital (mirror column) |
-| **UBS Conc. Limit** | Calculated | UBS Concentration Limit (mirror column) |
 | **UBS Eligible Uncalled Cap** | Calculated | Lesser of: Uncalled Capital or (Total Uncalled × UBS Concentration Limit) |
 | **Included UnCalled Conc. Excess** | Calculated | Excess uncalled above concentration limit, for included LPs only |
+| **Notes** | Manual Input | Free-text analyst notes |
 
 ---
 
