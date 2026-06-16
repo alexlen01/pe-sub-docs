@@ -881,6 +881,15 @@ LP below it until the next header. A populated per-row classification column (e.
 standard Agent LP Classification values plus the per-agent `classificationConfig` map that
 pe-sub-api builds from `bb_template_groups` and passes on each `POST /api/extract`.
 
+**Agent vs UBS LP Classification.** `Agent LP Classification` is the agent's own category
+label, extracted verbatim from the Agent BB document — either a column or **group-header rows**
+that separate sections of LPs. When supplied as section rows, the agent's value is filled down
+onto every LP beneath the header by pe-sub-extraction. The recognised header texts are
+configured per agent bank in `bb_template_groups` and passed to the extraction service as
+`classificationConfig` (built by `ClassificationConfigBuilder`). `UBS LP Classification` is the
+platform-computed internal advance-rate tier (Rated / Unrated >2bn / Unrated 1–2bn / Eligible /
+Excluded), kept separate so the agent label can be cross-checked against the UBS tier.
+
 **Path to fully self-service onboarding.** The Field Mapping screen already edits `fm_aliases`
 live. The remaining step is to surface `bb_template_tabs` and `bb_template_groups` in the admin
 Configuration screen, so an Analyst can register a new agent template variant —
