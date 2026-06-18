@@ -2071,20 +2071,38 @@ components:
               properties:
                 format:
                   type: string
+                  description: >
+                    Detected bank template format (mirrors `TemplateFormat.java` in
+                    pe-sub-extraction). Active agent banks first, then legacy / inactive
+                    (`GOLDMAN_SACHS` is the prior agent for Blue Owl GP Stakes V, now Wells Fargo),
+                    then utility values.
                   enum:
+                    - BANK_OF_AMERICA
+                    - BMO
+                    - BNY_MELLON
+                    - CIBC
+                    - CITY_NATIONAL
                     - CITIBANK
                     - JPM
+                    - LLOYDS
+                    - MIZUHO
+                    - MORGAN_STANLEY
+                    - MT_BANK
+                    - NATIXIS
+                    - PNC_BANK
+                    - SILICON_VALLEY_BANK
+                    - SMBC
+                    - SOCIETE_GENERALE
+                    - UBS_BANK_USA
+                    - WELLS_FARGO
                     - GOLDMAN_SACHS
                     - BARCLAYS
-                    - BANK_OF_AMERICA
-                    - WELLS_FARGO
-                    - CITIZENS_FINANCIAL
-                    - PNC_BANK
                     - FIFTH_THIRD
                     - HUNTINGTON
                     - WHITE_OAK
                     - ARES
                     - MIDCAP_FINANCIAL
+                    - CITIZENS_FINANCIAL
                     - INTERNAL
                     - UNKNOWN
                 version:        { type: string, nullable: true }

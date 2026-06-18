@@ -145,8 +145,9 @@ components:
           type: array
           items: { type: string }
           description: >
-            Header texts that scored below the 0.70 recognition threshold. Surfaced for manual
-            remap in the UI — never silently dropped.
+            Header texts whose best Jaro-Winkler score against the alias dictionary fell below the
+            0.95 recognition threshold (`HeaderMatcher.MIN_CONFIDENCE`). Surfaced for manual remap
+            in the UI — never silently dropped.
 
     TemplateDetection:
       type: object
@@ -200,8 +201,12 @@ components:
           minimum: 0
           maximum: 1
           description: >
-            Header-match confidence: exact alias = 1.0; ≥ 80% word overlap = 0.75;
-            ≥ 70% word overlap = 0.60. Below 0.70 is considered low confidence.
+            Header-match confidence from Jaro-Winkler similarity between the source column header
+            and the matched alias: an exact alias match scores 1.0. A column is only recognised
+            when its best score is ≥ 0.95 (`HeaderMatcher.MIN_CONFIDENCE`); otherwise the header is
+            returned in `unrecognizedColumns`. A present value whose confidence is below 0.70
+            (`FieldExtraction.LOW_CONFIDENCE_THRESHOLD`) is flagged low-confidence and sets the
+            row's `requiresReview`.
         sourceHeader:
           type: string
           nullable: true
@@ -237,20 +242,40 @@ components:
 
     TemplateFormat:
       type: string
-      description: Detected bank template format. `UNKNOWN` when no format matches.
+      description: >
+        Detected bank template format (mirrors `TemplateFormat.java`). `UNKNOWN` when no format
+        matches. The first group is the active UBS PE sub-line agent-bank portfolio; the second is
+        legacy / inactive (retained for historical submissions — `GOLDMAN_SACHS` is the prior agent
+        for Blue Owl GP Stakes V, now agented by Wells Fargo); the last two are utility values.
       enum:
+        # ── Active agent banks ──────────────────────────────
+        - BANK_OF_AMERICA
+        - BMO
+        - BNY_MELLON
+        - CIBC
+        - CITY_NATIONAL
         - CITIBANK
         - JPM
+        - LLOYDS
+        - MIZUHO
+        - MORGAN_STANLEY
+        - MT_BANK
+        - NATIXIS
+        - PNC_BANK
+        - SILICON_VALLEY_BANK
+        - SMBC
+        - SOCIETE_GENERALE
+        - UBS_BANK_USA
+        - WELLS_FARGO
+        # ── Legacy / inactive ───────────────────────────────
         - GOLDMAN_SACHS
         - BARCLAYS
-        - BANK_OF_AMERICA
-        - WELLS_FARGO
-        - CITIZENS_FINANCIAL
-        - PNC_BANK
         - FIFTH_THIRD
         - HUNTINGTON
         - WHITE_OAK
         - ARES
         - MIDCAP_FINANCIAL
+        - CITIZENS_FINANCIAL
+        # ── Utility ─────────────────────────────────────────
         - INTERNAL
         - UNKNOWN

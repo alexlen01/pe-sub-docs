@@ -153,7 +153,7 @@ const execSummary = [
 
 const context = [
   h1('2. Business Context'),
-  p('A subscription credit facility (sub line) is a revolving credit line extended to a private equity fund, secured by the unfunded capital commitments of the fund\'s Limited Partners (LPs). UBS participates as a lender in approximately 82 such facilities, each administered by an agent bank (Goldman Sachs, JPMorgan, Citibank, etc.).'),
+  p('A subscription credit facility (sub line) is a revolving credit line extended to a private equity fund, secured by the unfunded capital commitments of the fund\'s Limited Partners (LPs). UBS participates as a lender across approximately 71 facility positions administered by 17 agent banks (Wells Fargo, JPMorgan, Citibank, Bank of America, Morgan Stanley, etc.), representing roughly USD 10.6 billion of committed loan volume.'),
   p('Each month-end, the agent bank calculates and posts a Borrowing Base Certificate to the deal site. UBS Analysts download each certificate, reconcile it against UBS\'s own LP Master database, apply UBS-specific advance rates and concentration limits, and produce a Shadow Borrowing Base — UBS\'s independent view of availability. The completed analysis is reviewed by an Account/Transaction Manager (4-eye check) before it is finalised.'),
   p('The delta between the agent\'s BB and UBS\'s Shadow BB drives analyst conversations with the agent and, where material, escalation to credit risk management.'),
   h2('2.1 Monthly Cycle'),
@@ -177,7 +177,7 @@ const architecture = [
   h2('3.1 Architecture Overview'),
   p('The production system is a three-tier web application deployed on Azure Kubernetes Service (AKS):'),
   bullet('Presentation tier: React 18 SPA with Redux state management, served from Azure CDN'),
-  bullet('Application tier: Spring Boot 3.4 microservices on AKS; API Gateway handles routing, JWT validation, and rate limiting'),
+  bullet('Application tier: Spring Boot 3.5 microservices on AKS; API Gateway handles routing, JWT validation, and rate limiting'),
   bullet('Data tier: PostgreSQL Flexible Server (primary); Azure Blob Storage for documents and generated certificates; Azure Cache for Redis for service-layer caching'),
   h2('3.2 Component Map'),
   tbl(
@@ -185,12 +185,12 @@ const architecture = [
     [
       ['React SPA', 'React 18 · Redux Toolkit · Vite', 'Analyst workspace; all user interaction'],
       ['API Gateway', 'Azure API Management', 'JWT validation, rate limiting, routing, response caching'],
-      ['Ingestion Service', 'Spring Boot 3.4 · Apache POI', 'Multipart file upload; virus scan; Excel parsing; column recognition; normalization'],
-      ['LP Matching Service', 'Spring Boot 3.4 · Apache Commons Text', 'Jaro-Winkler + Levenshtein scoring; match queue management; LP Master deduplication'],
-      ['BB Calculation Service', 'Spring Boot 3.4', 'Shadow BB engine; tiered BUSA rate application; concentration breach detection; snapshot persistence'],
-      ['Configuration Service', 'Spring Boot 3.4', 'Advance rates, eligibility rules, concentration limits, field mapping dictionary'],
-      ['Reporting Service', 'Spring Boot 3.4 · iText 8', 'BB certificate PDF generation; CSV export; scheduled report delivery'],
-      ['Audit Service', 'Spring Boot 3.4', 'Append-only audit log; 7-year retention; tamper-evidence via record hashing'],
+      ['Ingestion Service', 'Spring Boot 3.5 · Apache POI', 'Multipart file upload; virus scan; Excel parsing; column recognition; normalization'],
+      ['LP Matching Service', 'Spring Boot 3.5 · Apache Commons Text', 'Jaro-Winkler + Levenshtein scoring; match queue management; LP Master deduplication'],
+      ['BB Calculation Service', 'Spring Boot 3.5', 'Shadow BB engine; tiered BUSA rate application; concentration breach detection; snapshot persistence'],
+      ['Configuration Service', 'Spring Boot 3.5', 'Advance rates, eligibility rules, concentration limits, field mapping dictionary'],
+      ['Reporting Service', 'Spring Boot 3.5 · iText 8', 'BB certificate PDF generation; CSV export; scheduled report delivery'],
+      ['Audit Service', 'Spring Boot 3.5', 'Append-only audit log; 7-year retention; tamper-evidence via record hashing'],
       ['PostgreSQL', 'Azure PostgreSQL Flexible Server 16', 'Primary persistent store for all structured data'],
       ['Blob Storage', 'Azure Blob Storage', 'Raw Agent BB files; generated certificates; export archives'],
       ['Redis Cache', 'Azure Cache for Redis', 'LP Master search results; facility list; credit agreement rules'],
@@ -521,7 +521,7 @@ const bbEngine = [
     ]
   ),
   note('Multi-tranche support (e.g. a flat-rate second tranche alongside the tiered rate) is not required by current facilities and is a future consideration only.'),
-  h2('7.4 Portfolio Aggregates'),
+  h2('7.3 Portfolio Aggregates'),
   tbl(
     ['Metric', 'Formula'],
     [
@@ -533,7 +533,7 @@ const bbEngine = [
       ['Concentration Excess', 'SUM(conc_excess_usd) for all LPs'],
     ]
   ),
-  h2('7.5 Concentration Breach Rules'),
+  h2('7.4 Concentration Breach Rules'),
   tbl(
     ['Rule', 'Threshold', 'Severity'],
     [
@@ -724,8 +724,8 @@ const performance = [
   tbl(
     ['Metric', 'Target', 'Notes'],
     [
-      ['LP Master size', '25,000 LPs', 'Current: ~21,847 across 82 facilities; growing ~10% annually'],
-      ['Facility count', '100 facilities', 'Current: 82; headroom for new mandates'],
+      ['LP Master size', '25,000 LPs', 'Current: ~21,847 across 71 facility positions; growing ~10% annually'],
+      ['Facility count', '100 facilities', 'Current: 71 positions across 17 agent banks; headroom for new mandates'],
       ['Largest single facility', '2,500 LPs', 'Current largest: Blackstone Infrastructure III (2,241 LPs)'],
       ['Full batch BB calculation', '< 30 seconds', 'For largest facility at 2,500 LPs; target for Phase 1'],
       ['Incremental real-time recalculation', '< 500 ms', 'Single LP reclassify → portfolio aggregates updated'],
