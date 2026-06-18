@@ -251,3 +251,16 @@ The monthly rollover must be an explicit, Admin-triggered scheduled job — not 
 | **Phase 1 — Foundation and Pilot** | 1–6 | LP master schema, facility registry, PostgreSQL on Azure, AKS, Azure AD SSO, CI/CD; Shadow BB calculation engine; Agent BB ingestion; LP matching; Rating normalization; Credit officer workspace; Certificate generator | Shadow BB calculated automatically for Blue Owl GP Stakes V from ingested Agent BB. Certificate output matches Excel Shadow BB. Credit officer signs off on parallel run |
 | **Phase 2 — Scale and Automation** | 7–10 | Data migration ETL from Access and Excel for all 80+ facilities; AUM normalization; LP deduplication; Portfolio dashboard; Configuration Studio; Low-code rules builder | All LP records migrated. Portfolio-level Shadow BB position available in real time without opening a spreadsheet. PE Sub team can apply credit agreement amendment without engineering involvement |
 | **Phase 3 — Analytics and Hardening** | 11–12 | Classification scenario analysis; BB sensitivity; what-if tools; API endpoints; performance tuning at 20k+ LP scale; penetration testing; DR/BCP validation; 7-year audit retention verification; CMS integration | Platform passes bank security review and DR test. Ready for production go-live |
+
+---
+
+
+## Review Extraction 
+
+**Issue #1**
+- Prototype shows Document Recognition tab with accented COLUMN HEADERS, also provids LP CATEGORY SECTIONS - essential to KKR Assendant Fund template recognition for proper LP records extraction.
+- UI has separate Document Recognition (old style) and Template Regognition section that defaults to KKR Ascendant Fund, although I am using Agent-BB-Blue-Owl-GP-Stakes-V template (recognized as Goldman Sachs Bank USA template, assume it needs to be added to templates, so it matches to that)
+
+**Issue #2**
+- Different columns are displayed now in Extracted LP Data records.
+Drop "LP Classificaoin" and shows "Investor Type" (Canonical LP Field) in a table for both UI and Prototype.
