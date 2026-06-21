@@ -156,10 +156,12 @@ paths:
           $ref: '#/components/responses/NotFound'
     patch:
       tags: [facilities]
-      summary: Update facility Agent Bank Summary fields
+      summary: Update facility fields
       description: >-
-        Partial update of the Agent Bank Summary inputs entered on the Facility Edit screen.
-        Every field is optional; only the fields present in the body are applied.
+        Partial update of the editable facility fields (Identity + Agent Bank Summary) entered on
+        the Facility Edit screen. Every field is optional; only the fields present in the body are
+        applied. `name` and `agentBank` are blank-guarded — a blank value is ignored rather than
+        clearing the NOT NULL column. Renaming to a name already used by another facility returns 409.
       operationId: updateFacility
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -170,6 +172,12 @@ paths:
             schema:
               type: object
               properties:
+                name:
+                  type: string
+                  description: Facility (borrower) name — must be unique across facilities
+                agentBank:
+                  type: string
+                  description: Agent bank administering the facility
                 accountNumber:
                   type: string
                   nullable: true
@@ -200,11 +208,35 @@ paths:
                 $ref: '#/components/schemas/Facility'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [facilities]
+      summary: Delete a facility
+      description: >-
+        Permanently delete a facility. Permitted only while it holds no LP records — committed LP
+        data is never destroyed. Cascades to the facility's non-LP dependents (submissions and their
+        extractions, match-queue entries, Shadow BB snapshots); audit_log rows are preserved with
+        their facility reference nulled.
+      operationId: deleteFacility
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Facility deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /facilities/{id}/status:
     patch:
       tags: [facilities]
       summary: Update facility status
+      description: >-
+        Update the workflow status. Transitioning to `Inactive` (deactivation) is permitted only
+        while the facility holds no LP records; otherwise 409 is returned. Reactivation (any other
+        status) is unconditional.
       operationId: updateFacilityStatus
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -227,6 +259,8 @@ paths:
                 $ref: '#/components/schemas/Facility'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # ── LPs ──────────────────────────────────────────────────────────────────────
 
@@ -1435,6 +1469,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with the current state of the resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
   # ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -1444,7 +1484,7 @@ components:
 
     FacilityStatus:
       type: string
-      enum: [Not Started, In Progress, Needs Review, Active, Pending]
+      enum: [Not Started, In Progress, Needs Review, Active, Pending, Inactive]
 
     LPClassification:
       type: string
@@ -1472,6 +1512,10 @@ components:
         lpCount:     { type: integer, description: Number of LP records persisted for this facility, example: 900 }
         facilitySize:     { type: number, nullable: true, description: Stated facility commitment in dollars (Shadow BB Borrowing Base input) }
         ubsParticipation: { type: number, nullable: true, description: UBS's participation share of the facility in dollars (Shadow BB Borrowing Base input) }
+        agentBB:     { type: number, nullable: true, description: Latest snapshot's Agent Borrowing Base in $millions; null until a BB is run }
+        ubsBB:       { type: number, nullable: true, description: Latest snapshot's UBS Borrowing Base in $millions; null until a BB is run }
+        bbDelta:     { type: number, nullable: true, description: Latest snapshot's UBS − Agent BB delta in $millions; null until a BB is run }
+        ear:         { type: number, nullable: true, description: Latest snapshot's UBS effective advance rate (fraction); null until a BB is run }
         lastRunAt:   { type: string, format: date-time, nullable: true }
         createdAt:   { type: string, format: date-time }
         updatedAt:   { type: string, format: date-time }

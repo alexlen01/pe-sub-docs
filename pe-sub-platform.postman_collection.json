@@ -119,20 +119,54 @@
               "response": []
             },
             {
-              "name": "Update facility Agent Bank Summary fields",
+              "name": "Update facility fields",
               "request": {
                 "method": "PATCH",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"accountNumber\": \"5VX1796\",\n  \"loanAmount\": 2500000000.00,\n  \"maturityDate\": \"2029-03-15\"\n}",
+                  "raw": "{\n  \"name\": \"Blue Owl GP Stakes V\",\n  \"agentBank\": \"JPMorgan\",\n  \"accountNumber\": \"5VX1796\",\n  \"loanAmount\": 2500000000.00,\n  \"maturityDate\": \"2029-03-15\"\n}",
                   "options": { "raw": { "language": "json" } }
                 },
                 "url": {
                   "raw": "{{base}}/api/facilities/{{facilityId}}",
                   "host": ["{{base}}"],
                   "path": ["api", "facilities", "{{facilityId}}"]
-                }
+                },
+                "description": "Partial update of editable facility fields. name/agentBank are blank-guarded; renaming to an existing name returns 409."
+              },
+              "response": []
+            },
+            {
+              "name": "Deactivate facility",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"Inactive\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/facilities/{{facilityId}}/status",
+                  "host": ["{{base}}"],
+                  "path": ["api", "facilities", "{{facilityId}}", "status"]
+                },
+                "description": "Set status to Inactive. Returns 409 if the facility still has LP records. Reactivate by patching the status back (e.g. \"Not Started\")."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete facility",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/facilities/{{facilityId}}",
+                  "host": ["{{base}}"],
+                  "path": ["api", "facilities", "{{facilityId}}"]
+                },
+                "description": "Permanently delete a facility. 204 on success, 404 if absent, 409 if it still has LP records. Cascades to non-LP dependents; audit history is preserved."
               },
               "response": []
             }
