@@ -154,6 +154,52 @@ paths:
                 $ref: '#/components/schemas/Facility'
         '404':
           $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [facilities]
+      summary: Update facility Agent Bank Summary fields
+      description: >-
+        Partial update of the Agent Bank Summary inputs entered on the Facility Edit screen.
+        Every field is optional; only the fields present in the body are applied.
+      operationId: updateFacility
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountNumber:
+                  type: string
+                  nullable: true
+                  description: UBS internal identifier (e.g. "5VX1796")
+                loanAmount:
+                  type: number
+                  nullable: true
+                  description: Committed facility size in dollars
+                maturityDate:
+                  type: string
+                  format: date
+                  nullable: true
+                  description: Facility maturity date from the credit agreement
+                facilitySize:
+                  type: number
+                  nullable: true
+                  description: Stated facility commitment in dollars (Shadow BB Borrowing Base input)
+                ubsParticipation:
+                  type: number
+                  nullable: true
+                  description: UBS's participation share of the facility in dollars (Shadow BB Borrowing Base input)
+      responses:
+        '200':
+          description: Updated facility record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /facilities/{id}/status:
     patch:
@@ -1424,6 +1470,8 @@ components:
         status:      { $ref: '#/components/schemas/FacilityStatus' }
         concLimitM:  { type: number, description: Per-LP concentration limit in $M, example: 25 }
         lpCount:     { type: integer, description: Number of LP records persisted for this facility, example: 900 }
+        facilitySize:     { type: number, nullable: true, description: Stated facility commitment in dollars (Shadow BB Borrowing Base input) }
+        ubsParticipation: { type: number, nullable: true, description: UBS's participation share of the facility in dollars (Shadow BB Borrowing Base input) }
         lastRunAt:   { type: string, format: date-time, nullable: true }
         createdAt:   { type: string, format: date-time }
         updatedAt:   { type: string, format: date-time }
@@ -1623,12 +1671,14 @@ components:
       description: >
         Extended portfolio summary powering the five-table Shadow BB summary panel
         (LP Portfolio, Borrowing Base, BUSA rates, Agent rates, LP Classification).
+        All monetary fields and breakdown `dollars` values are expressed in $millions;
+        the UI renders them as full dollars or abbreviated "$M" depending on panel width.
       properties:
         # LP Portfolio table
-        totalCapCommit:     { type: number, description: Total capital commitments in dollars }
-        totalCalledCap:     { type: number }
+        totalCapCommit:     { type: number, description: Total capital commitments in $millions }
+        totalCalledCap:     { type: number, description: Total called capital in $millions (Capital Commitments − Uncalled, derived when not stored) }
         pctCalled:          { type: number }
-        totalAllUncalled:   { type: number, description: Total uncalled across all LPs in dollars }
+        totalAllUncalled:   { type: number, description: Total uncalled across all LPs in $millions }
         totalLPs:           { type: integer }
         pctInstitutional:   { type: number, description: Institutional LPs' uncalled share of total uncalled }
         pctHNW:             { type: number, description: HNW LPs' uncalled share of total uncalled }
@@ -1636,15 +1686,15 @@ components:
         pctTop20:           { type: number }
         igRatio:            { type: number, description: Investment-grade LPs' uncalled share of total uncalled }
         pctUncalledGt25bnAum: { type: number, description: Uncalled share from LPs with AUM > $25bn }
-        # Borrowing Base table
-        facilitySize:        { type: number }
-        ubsParticipation:    { type: number }
-        ubsParticipationPct: { type: number }
-        facilityLTV:         { type: number }
-        availableCommit:     { type: number }
-        facilityAdvRate:     { type: number }
-        agentBBRaw:          { type: number, description: Agent BB in dollars }
-        ubsBBRaw:            { type: number, description: UBS BB in dollars }
+        # Borrowing Base table (monetary fields in $millions)
+        facilitySize:        { type: number, description: Stated facility commitment in $millions }
+        ubsParticipation:    { type: number, description: UBS participation share in $millions }
+        ubsParticipationPct: { type: number, description: UBS Participation ÷ Total Facility Size }
+        facilityLTV:         { type: number, description: Total Facility Size ÷ Total Uncalled }
+        availableCommit:     { type: number, description: MIN(Total Facility Size, Agent BB) in $millions }
+        facilityAdvRate:     { type: number, description: Agent BB ÷ Total Uncalled }
+        agentBBRaw:          { type: number, description: Agent BB in $millions }
+        ubsBBRaw:            { type: number, description: UBS BB in $millions }
         ubsAdvRate:          { type: number }
         # Breakdown tables
         busaBreakdown:  { type: array, items: { $ref: '#/components/schemas/RateBreakdownRow' } }

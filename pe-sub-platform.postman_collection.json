@@ -117,6 +117,24 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Update facility Agent Bank Summary fields",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountNumber\": \"5VX1796\",\n  \"loanAmount\": 2500000000.00,\n  \"maturityDate\": \"2029-03-15\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base}}/api/facilities/{{facilityId}}",
+                  "host": ["{{base}}"],
+                  "path": ["api", "facilities", "{{facilityId}}"]
+                }
+              },
+              "response": []
             }
           ]
         },
