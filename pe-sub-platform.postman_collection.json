@@ -133,7 +133,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "lps"]
                 },
-                "description": "Returns all LPs across all facilities, ordered by rank."
+                "description": "Returns all LPs across all facilities, ordered by investor name."
               },
               "response": []
             },
@@ -226,7 +226,7 @@
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"cls\": \"Rated\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90.0,\n      \"ubsConcLimitPct\": 7.5\n    }\n  ]\n}",
+                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"cls\": \"Rated\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"aum\": \"$310.0B\",\n      \"nav\": \"$180.0B\",\n      \"pension\": \"$300.0B\",\n      \"pensionFunded\": \"112%\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90.0,\n      \"ubsConcLimitPct\": 7.5\n    }\n  ]\n}",
                   "options": { "raw": { "language": "json" } }
                 },
                 "url": {
@@ -234,7 +234,7 @@
                   "host": ["{{base}}"],
                   "path": ["api", "lps", "classification"]
                 },
-                "description": "The Shadow BB screen's Save. Rows match persisted records by (facilityId, name); unmatched names are ignored. LP fields (cls, sp, mdy, fitch, inc, uc) update in place; ubsAdvRatePct/ubsConcLimitPct (percentages) upsert into lp_rates for the period. effectiveDate (YYYY-MM) defaults to current month. Returns { updated }."
+                "description": "The Shadow BB screen's Save. Rows match persisted records by (facilityId, name); unmatched names are ignored. LP fields (cls, sp, mdy, fitch, aum, nav, pension, pensionFunded, inc, uc) update in place; ubsAdvRatePct/ubsConcLimitPct (percentages) upsert into lp_rates for the period. effectiveDate (YYYY-MM) defaults to current month. Returns { updated }."
               },
               "response": []
             },

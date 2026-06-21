@@ -45,7 +45,6 @@ BUSA BB vs Agent BB calculated.
 The Shadow BB captures the following fields for each LP:
 
 **Identity & Classification**
-- Rank
 - Investor Name
 - Parent
 - SPV

@@ -207,7 +207,7 @@ paths:
           description: Case-insensitive substring match on investor name
       responses:
         '200':
-          description: LP records ordered by rank
+          description: LP records ordered by investor name
           content:
             application/json:
               schema:
@@ -262,8 +262,9 @@ paths:
         LP records are created up front when match decisions are committed, so this writes the
         credit officer's edits onto real LP Master records. Rows are matched to existing records
         by `(facilityId, name)`; unmatched names are ignored. LP entity fields (`cls`, `sp`, `mdy`,
-        `fitch`, `inc`, `uc`) update in place; `ubsAdvRatePct` / `ubsConcLimitPct` (percentages)
-        upsert into `lp_rates` for the period as decimal fractions.
+        `fitch`, `aum`, `nav`, `pension`, `pensionFunded`, `inc`, `uc`) update in place;
+        `ubsAdvRatePct` / `ubsConcLimitPct` (percentages) upsert into `lp_rates` for the period as
+        decimal fractions.
       operationId: saveLPClassification
       requestBody:
         required: true
@@ -286,6 +287,10 @@ paths:
                       sp:              { type: string, nullable: true }
                       mdy:             { type: string, nullable: true }
                       fitch:           { type: string, nullable: true }
+                      aum:             { type: string, nullable: true, description: "Assets Under Management" }
+                      nav:             { type: string, nullable: true, description: "Net Asset Value" }
+                      pension:         { type: string, nullable: true, description: "Pension Assets" }
+                      pensionFunded:   { type: string, nullable: true, description: "Pension Funded %" }
                       inc:             { type: boolean, nullable: true }
                       uc:              { type: string, nullable: true }
                       ubsAdvRatePct:   { type: number, nullable: true, description: "percent, e.g. 90.0" }
@@ -1425,13 +1430,12 @@ components:
 
     LP:
       type: object
-      required: [id, facilityId, rank, name, cls, inc]
+      required: [id, facilityId, name, cls, inc]
       description: LP Master record — mirrors Step 4 (Final Shadow BB) field set from BB_PROCESS_FLOW
       properties:
         # Identity
         id:            { type: integer }
         facilityId:    { type: integer }
-        rank:          { type: integer }
         name:          { type: string }
         parent:        { type: string, nullable: true }
         spv:           { type: boolean }

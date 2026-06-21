@@ -129,15 +129,15 @@ To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the 
 | conc_limit_m | numeric(10,2) | Per-LP concentration limit in $M; default 25 |
 | last_run_at | timestamp nullable | Set on each Shadow BB run |
 | created_at / updated_at | timestamp | |
-| account_number | varchar(20) nullable | *(planned — V1_7)* UBS internal loan reference, e.g. `5VX1796`; unique; operational link to UBS loan administration |
-| loan_amount | numeric(15,2) nullable | *(planned — V1_7)* Committed facility size in USD from Agent Bank Summary |
-| maturity_date | date nullable | *(planned — V1_7)* Facility maturity date |
-| bank_status | varchar(50) nullable | *(planned — V1_7)* Credit/operational status, e.g. `Active` / `Terminated`; distinct from workflow `status` |
-| bank_status_date | date nullable | *(planned — V1_7)* Most recent `bank_status` change date from Agent Bank Summary |
+| account_number | varchar(20) nullable | *(planned)* UBS internal loan reference, e.g. `5VX1796`; unique; operational link to UBS loan administration |
+| loan_amount | numeric(15,2) nullable | *(planned)* Committed facility size in USD from Agent Bank Summary |
+| maturity_date | date nullable | *(planned)* Facility maturity date |
+| bank_status | varchar(50) nullable | *(planned)* Credit/operational status, e.g. `Active` / `Terminated`; distinct from workflow `status` |
+| bank_status_date | date nullable | *(planned)* Most recent `bank_status` change date from Agent Bank Summary |
 
 ### `lp_records`
 
-Stores the LP Master — one record per LP per facility. Rank is computed dynamically by the Shadow BB engine (sorted by uncalled capital desc) and is not stored.
+Stores the LP Master — one record per LP per facility.
 
 Column naming aligned with LP Master schema: `name → investor_name`, `hq → high_qty`, `type → inv_type`.
 
@@ -247,7 +247,7 @@ Auto-learned template registry keyed by agent bank. On first confirmed extractio
 |--------|------|-------|
 | id | serial PK | |
 | agent_bank | varchar(255) | Case-insensitive index; not unique once multi-class support is added |
-| template_class | varchar(10) nullable | *(planned — V1_7)* `A`, `B`, or `C`; populated on `POST /{id}/confirm`; drives extraction parsing path |
+| template_class | varchar(10) nullable | *(planned)* `A`, `B`, or `C`; populated on `POST /{id}/confirm`; drives extraction parsing path |
 | sheet_name | varchar(255) nullable | BB sheet name to target |
 | header_row_index | integer nullable | Zero-based header row index |
 | auto_learned | boolean | Default `true` — set by `POST /{id}/confirm` |

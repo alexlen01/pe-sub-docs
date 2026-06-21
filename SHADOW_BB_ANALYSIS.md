@@ -8,7 +8,6 @@ This document defines the data model, column semantics, and summary table struct
 
 | Column | Source | Description |
 |--------|--------|-------------|
-| **Rank** | Calculated | Ranks investors by Uncalled Capital descending (1 = largest uncalled) |
 | **Investor Name** | Manual Input | Full legal name of the LP |
 | **Parent** | Manual Input | Parent organization, manager, or sponsor |
 | **SPV?** | Manual Input | Special Purpose Vehicle flag — `Y` or `N` |
@@ -30,7 +29,7 @@ This document defines the data model, column semantics, and summary table struct
 | **Capital Commitments** | Manual Input | Total original LP commitment (USD) |
 | **% of Capital Commitments** | Calculated | LP commitment ÷ total fund commitments |
 | **Called Capital** | Calculated | Capital Commitments − Uncalled Capital |
-| **Uncalled Capital** | Manual Input | Remaining uncalled commitment (USD) — primary sort / rank field |
+| **Uncalled Capital** | Manual Input | Remaining uncalled commitment (USD) |
 | **% of Uncalled Capital** | Calculated | LP uncalled ÷ total fund uncalled |
 | **% of LP Called** | Calculated | Called Capital ÷ Capital Commitments |
 | **Agent Concentration Limit** | Manual Input | Agent-set concentration limit (decimal, e.g., `0.12`) |
