@@ -22,19 +22,19 @@ This document defines the data model, column semantics, and summary table struct
 | J | **Moody's** | Manual Input | Moody's credit rating string (e.g., `Aa1`, `A3`) |
 | K | **Fitch** | Manual Input | Fitch credit rating string (e.g., `AA-`) |
 | L | **LP Size ($ Bil)** | Manual Input | Numeric size of the LP in billions USD — AUM, Pension Assets, or NAV depending on LP type (see col M) |
-| M | **LP Size Criteria** | Manual Input | Which size metric LP Size represents — one of: `AUM`, `Assets`, `NAV` |
-| N | **Capital Commitments** | Manual Input | Total original LP commitment (USD) |
+| M | **LP Size Criteria (AUM, NAV, Assets)** | Manual Input | Which size metric LP Size represents — one of: `AUM`, `NAV`, `Assets` |
+| N | **Capital Commitment** | Manual Input | Total original LP commitment (USD) |
 | O | **Uncalled Capital** | Manual Input | Remaining uncalled commitment (USD) |
 | P | **UBS Advance Rate** | Manual Input | UBS-assigned advance rate (decimal: `0.90`, `0.75`, `0.65`, `0.00`) |
 | Q | **Agent Advance Rate** | Manual Input | Agent-assigned advance rate (decimal: `0.90`, `0.75`, `0.00`) |
-| R | **Agent Concentration Limit** | Manual Input | Agent-set concentration limit (decimal, e.g., `0.20`, `0.05`) |
-| S | **UBS Concentration Limit** | Manual Input | UBS-set concentration limit (decimal, e.g., `0.15`, `0.10`) |
-| T | **% of Capital Committed** | Calculated | Capital Commitments ÷ Total Fund Capital Commitments |
-| U | **Called Capital** | Calculated | Capital Commitments − Uncalled Capital |
+| R | **UBS Concentration Limit** | Manual Input | UBS-set concentration limit (decimal, e.g., `0.15`, `0.10`) |
+| S | **Agent Concentration Limit** | Manual Input | Agent-set concentration limit (decimal, e.g., `0.20`, `0.05`) |
+| T | **% of Capital Commitments** | Calculated | Capital Commitment ÷ Total Fund Capital Commitments |
+| U | **Called Capital** | Calculated | Capital Commitment − Uncalled Capital |
 | V | **% of Uncalled Capital** | Calculated | LP Uncalled Capital ÷ Total Fund Uncalled Capital |
 | W | **% of LP Called** | Calculated | Called Capital ÷ Capital Commitments |
-| X | **Agent Excess Concentration Base** | Calculated | Excess of LP uncalled above Agent Concentration Limit applied to total fund uncalled; zero if within limit |
-| Y | **UBS Excess Concentration Base** | Calculated | Excess of LP uncalled above UBS Concentration Limit applied to total fund uncalled; zero if within limit |
+| X | **Agent Excess Concentration** | Calculated | Excess of LP uncalled above Agent Concentration Limit applied to total fund uncalled; zero if within limit |
+| Y | **UBS Excess Concentration** | Calculated | Excess of LP uncalled above UBS Concentration Limit applied to total fund uncalled; zero if within limit |
 | Z | **Agent Borrowing Base** | Calculated | Uncalled Capital × Agent Advance Rate (capped to Agent Concentration Limit) |
 | AA | **UBS Borrowing Base** | Calculated | Uncalled Capital × UBS Advance Rate (capped to UBS Concentration Limit) |
 | AB | **Notes** | Manual Input | Free-text analyst notes |
@@ -74,7 +74,7 @@ These columns are UBS Shadow BB additions with no direct Agent BB equivalent.
 | **LP Size Criteria** | Clarifies which size metric (`AUM`, `Assets`, `NAV`) col L represents |
 | **UBS Advance Rate** | UBS-assigned advance rate (may differ from Agent rate) |
 | **UBS Concentration Limit** | UBS-specific concentration cap |
-| **UBS Excess Concentration Base** | Excess uncalled above UBS concentration cap |
+| **UBS Excess Concentration** | Excess uncalled above UBS concentration cap |
 | **UBS Borrowing Base** | UBS-computed borrowing base contribution |
 
 ---
@@ -159,10 +159,10 @@ Breaks down the LP population by Agent advance rate bucket.
 |------|----------|---------|
 | LP Classification | Single `Investor Type` column; buckets: Rated, Unrated, HNW Feeder, Eligible, Excluded | Split into `UBS LP Classification` (6 tiers) and `Agent LP Classification` (5 tiers) |
 | LP Size | `AUM` (USD) + `NAV` (text range label) as separate columns | `LP Size ($ Bil)` (numeric) + `LP Size Criteria` (`AUM` / `Assets` / `NAV`) |
-| Excess Concentration | Single `Included Uncalled Concentration Excess` | Split: `Agent Excess Concentration Base` (col X) and `UBS Excess Concentration Base` (col Y) |
+| Excess Concentration | Single `Included Uncalled Concentration Excess` | Split: `Agent Excess Concentration` (col X) and `UBS Excess Concentration` (col Y) |
 | UBS Advance Rates | 0.90 / 0.75 / 0.65 / 0.50 / 0.00 | 0.90 / 0.75 / 0.65 / 0.50 / 0.00 (unchanged) |
 | Agent Advance Rates | 0.90 / 0.75 / 0.65 / 0.50 / 0.00 | 0.90 / 0.75 / 0.50 / 0.00 (0.65 bucket removed) |
 | Columns removed | — | `Region / Location`, `Pension Assets`, `Pension Funded %`, `High Quality`, `UBS Included`, `UBS Eligible Uncalled Capital` |
-| Columns added | — | `Rank`, `LP Size Criteria`, `Agent LP Classification`, `Agent Excess Concentration Base`, `UBS Excess Concentration Base` |
+| Columns added | — | `Rank`, `LP Size Criteria`, `Agent LP Classification`, `Agent Excess Concentration`, `UBS Excess Concentration` |
 | Facility Summary | 9 metrics | 13 metrics — added `EAR Differential`, `Uncalled to Facility`, `BB to Facility`, `Facility to Fund Size` |
 | Top LP concentration stats | `% Top 10`, `% Top 20` | `% Top 3 LPs`, `% Top 10 LPs`, `% Top 20 LPs` |

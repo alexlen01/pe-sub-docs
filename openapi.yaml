@@ -191,6 +191,11 @@ paths:
                   format: date
                   nullable: true
                   description: Facility maturity date from the credit agreement
+                collateralDate:
+                  type: string
+                  format: date
+                  nullable: true
+                  description: Collateral as-of date from the Agent Bank Summary
                 facilitySize:
                   type: number
                   nullable: true
@@ -1510,6 +1515,12 @@ components:
         status:      { $ref: '#/components/schemas/FacilityStatus' }
         concLimitM:  { type: number, description: Per-LP concentration limit in $M, example: 25 }
         lpCount:     { type: integer, description: Number of LP records persisted for this facility, example: 900 }
+        accountNumber:  { type: string, nullable: true, description: UBS internal identifier e.g. "5VX1796" }
+        loanAmount:     { type: number, nullable: true, description: Committed facility size in dollars from Agent Bank Summary }
+        maturityDate:   { type: string, format: date, nullable: true, description: Facility maturity date }
+        collateralDate: { type: string, format: date, nullable: true, description: Collateral as-of date from Agent Bank Summary }
+        bankStatus:     { type: string, nullable: true, description: Agent-reported facility status }
+        bankStatusDate: { type: string, format: date, nullable: true, description: Most recent agent-reported status date }
         facilitySize:     { type: number, nullable: true, description: Stated facility commitment in dollars (Shadow BB Borrowing Base input) }
         ubsParticipation: { type: number, nullable: true, description: UBS's participation share of the facility in dollars (Shadow BB Borrowing Base input) }
         agentBB:     { type: number, nullable: true, description: Latest snapshot's Agent Borrowing Base in $millions; null until a BB is run }
