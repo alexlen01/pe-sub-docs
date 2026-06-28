@@ -36,14 +36,14 @@ This document maps what the current React prototype covers against what a produc
 
 | Area | Prototype Status | Production Gap |
 |---|---|---|
-| LP Master | ✅ 900-record dataset; 9 field groups (Identity, Classification, Location, Investor Profile, Ratings, Financial Scale, Commitment Data, Uncalled Data, Borrowing Base); search, filter, 20-row pagination; draggable detail overlay; RBAC-gated edit (Analyst/Account/Transaction Manager); reclassify workflow inline; version history inline; 35-field CSV export | Persistent `lp_master` PostgreSQL table; bank-wide LP deduplication across all facilities; custom fields and annotations; nightly sync from UBS counterparty/KYC system |
-| LP Submission Record | ❌ Not modelled | `lp_submission_record` table (keyed on lp_id, submission_id) stores 14 computed fields plus UBS Included flag, Reclassified flag, Transferee flag per submission |
+| LP Master | ✅ 900-record dataset; 9 field groups (Identity, Classification, Location, Investor Profile, Ratings, Financial Scale, Commitment Data, Uncalled Data, Borrowing Base); search, filter, 20-row pagination; draggable detail overlay; RBAC-gated edit (Analyst/Account/Transaction Manager); reclassify workflow inline; version history inline; 35-field CSV export | Persistent `lp_records` PostgreSQL table (one row per LP per facility); bank-wide LP deduplication across all facilities; custom fields and annotations; nightly sync from UBS counterparty/KYC system |
+| LP Submission Record | ❌ Not modelled | No `lp_submission_record` table exists in the current schema — per-submission computed fields (14 columns) plus UBS Included, Reclassified, Transferee flags are a planned addition; currently `lp_records` stores latest state only |
 | UBS Included flag | ✅ `inc` field on LP records; filters Shadow BB aggregates and executive summary; CO-editable in LP Master and Shadow BB screen | Production: persisted per LP per submission; changes logged to audit trail |
 | AUM storage | ⚠️ String labels (e.g. "$2.4B") in LP dataset | AUM stored as numeric; agent-supplied text ranges (e.g. "1bn–5bn") normalized at ingestion; manual review queue for unmapped ranges |
 | Facilities | ⚠️ 82 static records with status, agent bank, UBS participation, delta, EAR | CRUD-managed facility registry linked to credit agreements; agent bank profiles; advance rate and concentration limit configuration per facility |
 | Submissions | ⚠️ Static array in `facilityData.js`; no file storage | File ingestion pipeline; document versioning; blob storage for original Agent BB files. Submission notes should be pipeline-generated (not authored): each processing stage appends its findings as a timestamped event (e.g. extraction complete, N name variants detected, M eligibility conflicts). Submission History rows would then surface contextual shortcut buttons (Go to Match Queue, Open Shadow BB) driven by submission state, not by note text — note text is read-only system output |
 | Audit log | ⚠️ Static array in `facilityData.js`; surfaced in a real Audit Trail screen with filtering, search, and pagination | Immutable append-only store; 7-year retention (regulatory requirement); tamper-evident |
-| Shadow BB results | ⚠️ Computed in-memory by real `bbCalculationService.js`; not persisted between sessions | Persisted per submission as `bb_calculation_snapshot`; versioned; immutably stored for audit; retrievable for historical comparison |
+| Shadow BB results | ⚠️ Computed in-memory by real `bbCalculationService.js`; not persisted between sessions | Persisted per submission as `bb_snapshots` (JSONB `result` column); versioned; immutably stored for audit; retrievable for historical comparison |
 
 ---
 
@@ -170,7 +170,7 @@ The proposal includes a full Data Migration ETL module (Module 11) — absent fr
 | Area | Prototype Status | Production Gap |
 |---|---|---|
 | Hosting | ⚠️ Vite dev server; deployable as static SPA | Azure Kubernetes Service (AKS); containerised microservices; horizontal pod autoscaling |
-| Database | ❌ None (in-memory React state; state lost on refresh) | PostgreSQL Flexible Server: `lp_master`, facilities, submissions, lp_submission_records, audit; pgcrypto for sensitive fields |
+| Database | ❌ None (in-memory React state; state lost on refresh) | PostgreSQL Flexible Server: `lp_records`, `facilities`, `submissions`, `bb_snapshots`, `audit_log`; `lp_submission_records` is a planned addition (not yet in schema); pgcrypto for sensitive fields |
 | File storage | ⚠️ Generated Excel saved to `public/`; no server-side blob store | Azure Blob Storage: raw Agent BB documents, generated certificates, export archives |
 | Background jobs | ⚠️ `setTimeout` simulating async processing in Upload wizard | Async job queue for BB recalculation on submission; observable; retryable; Quartz Scheduler for future deal site integration |
 | Observability | ❌ Browser console | Azure Monitor + Application Insights; structured logging; distributed tracing; alerting on calculation failures |

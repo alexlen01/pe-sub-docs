@@ -2,7 +2,7 @@
 
 **Template ID:** `kkr-ascendant`
 **Template Class:** A — Full BB Schedule, group-header classification, numerical ratings, advance rates per LP section.
-**Agent Bank (placeholder):** KKR Ascendant Fund *(update to real agent bank when facility is onboarded)*
+**Agent Bank:** KKR Capital Markets
 
 ---
 
@@ -17,7 +17,17 @@
 ### Preamble / Summary Block
 
 Rows 2–9 (8 rows above the header) contain facility-level summary fields:
-title, facility totals, advance-rate summaries. The extraction engine skips these rows before parsing LP records. `summary_rows_above_header = 8`.
+
+- **Row 2:** `KKR Ascendant – Borrowing Base` — fund/title anchor.
+- **Row 3:** `Agent Bank | KKR Capital Markets`
+- **Row 4:** `Facility | KKR Ascendant Fund`
+- **Row 5:** `Total Investors`
+- **Row 6:** `Total Unfunded Commitment`
+- **Row 7:** `Eligibility Basis`
+- **Row 8:** `Prepared By | KKR Prime Finance`
+- **Row 9:** blank separator
+
+`summary_rows_above_header = 8`
 
 ### LP Category Group Sections *(LP_GRID tab)*
 
@@ -37,7 +47,7 @@ Each group header row is followed by LP rows, then a subtotal row. Subtotal rows
 | # | Agent Header (verbatim) | Canonical Field (nearest) | Notes |
 |---|-------------------------|---------------------------|-------|
 | 1 | `Investor` | Investor Name | Primary LP identifier |
-| 2 | `Fund Sleeve` | — | Structural — feeder/vehicle reference; no canonical home |
+| 2 | `Fund Sleeve` | — | Structural — feeder/vehicle reference (Onshore Feeder, Offshore Feeder, Levered Feeder); no canonical home |
 | 3 | `Moody's` | Moody's Rating | Agency rating |
 | 4 | `S&P` | S&P Rating | Agency rating |
 | 5 | `Net Worth` | AUM | Used as scale qualifier; may be AUM or NAV depending on LP type |
@@ -50,18 +60,22 @@ Each group header row is followed by LP rows, then a subtotal row. Subtotal rows
 | 12 | `Advance Rate` | Advance Rate | Agent advance rate (decimal, e.g. 0.90) |
 | 13 | `Borrowing Base` | Borrowing Base | LP BB contribution = Eligible × Advance Rate |
 
+> **`Fund Sleeve` column:** Each LP row carries one of three values (`Onshore Feeder`, `Offshore Feeder`, `Levered Feeder`) identifying which feeder vehicle the LP invested through. This is a data column, not a tab/sleeve split.
+
 ---
 
 ## Legend
 
-No cell-format legend defined for this template. Colour-coded rows are not documented in the sample.
+No cell-format legend defined for this template.
 
 ---
 
 ## Recognition Signatures
 
-- **Title anchor:** Row 2, contains `"KKR Ascendant"` and `"Borrowing Base"`
-- **Detection strategy:** Match fund name in the title cell at row 2 of the `Borrowing Base` sheet.
+- **Title anchor:** Row 2, contains `"KKR Ascendant"`.
+- **Agent bank:** Row 3, col B = `KKR Capital Markets`.
+- **Sheet name:** `Borrowing Base`
+- **Detection strategy:** Match fund name in title cell at row 2 of the `Borrowing Base` sheet.
 - **Detection keys:** `kkr ascendant`
 
 ---
@@ -87,13 +101,13 @@ To register this template via the **BB Template Management** screen → **Upload
 
 | agent_bank | template_class | sheet_name | header_row_index | auto_learned | tranche_count | has_grouping_rows | has_color_flags | summary_rows_above_header |
 |---|---|---|---|---|---|---|---|---|
-| KKR Ascendant Fund | A | Borrowing Base | 10 | false | 1 | true | false | 8 |
+| KKR Capital Markets (KKR Ascendant Fund) | A | Borrowing Base | 9 | false | 1 | true | false | 8 |
 
 ### Sheet 2: `Tabs` *(one header row + one row per tab)*
 
 | tab_role | tab_sort | sheet_name | header_row_index | header_row_span | skip_row_keywords |
 |---|---|---|---|---|---|
-| LP_GRID | 1 | Borrowing Base | 10 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 1 | Borrowing Base | 9 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
 
 ### Sheet 3: `Groups` *(one header row + one row per group section)*
 

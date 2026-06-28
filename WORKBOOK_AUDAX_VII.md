@@ -1,8 +1,8 @@
 # Agent BB Workbook Structure: Audax Fund VII
 
 **Template ID:** `audax-vii`
-**Template Class:** B — Full BB Schedule with per-row `Included/Excluded Investor` column; no group-header classification rows. Multiple tabs, one per borrower entity.
-**Agent Bank (placeholder):** Audax Fund VII *(update to real agent bank when facility is onboarded)*
+**Template Class:** B — Full BB Schedule with per-row `Included/Excluded Investor` column; no group-header classification rows. Multiple named tabs, one per borrower entity.
+**Agent Bank:** Silicon Valley Bank
 
 ---
 
@@ -10,21 +10,24 @@
 
 ### Tabs
 
-This is a **multi-tab workbook**. One `Investor List` sheet exists per borrower entity (e.g. one tab per deal/borrower). Each tab carries the same column structure.
+This is a **multi-tab workbook**. One tab exists per borrower entity. Each tab is **named after the borrower company**, not a generic label.
 
-| Role | Sort | Sheet Name | Header Row | Header Span | Notes |
-|------|------|------------|------------|-------------|-------|
-| LP_GRID | 1 | `Investor List` | 13 | 1 | Repeat pattern — one tab per borrower |
+| Role | Sort | Sheet Name (verbatim) | Sleeve Name | Header Row | Header Span | Notes |
+|------|------|----------------------|-------------|------------|-------------|-------|
+| LP_GRID | 1 | `Nerdio` | Nerdio | 13 | 1 | Borrower: Audax DL VII (Cayman), L.P. |
+| LP_GRID | 2 | `Apptio` | Apptio | 13 | 1 | Borrower: Audax DL VII (Levered), L.P. |
+| LP_GRID | 3 | `Marlin` | Marlin | 13 | 1 | Borrower entity varies per workbook |
 
-> **Note:** The sheet name `Investor List` is shared across tabs. The extraction engine should target the first matching tab or aggregate across all matching tabs depending on the multi-tab aggregation mode (deferred).
+> **Tab naming convention:** Tabs are named for the borrower company (Nerdio, Apptio, Marlin), not with a generic "Investor List" label. The V1_12 migration seeds exactly these three named sleeves.
 
 ### Preamble Block
 
-Rows 1–12 precede the header row. Key metadata rows:
-- **Row 4:** `Deal Name: <borrower>` — identifies the borrower/deal for this tab.
-- **Rows 9–10:** Borrower entity listing (two borrower rows).
+Rows 1–12 precede the header row on each tab:
+- **Row 4:** `Deal Name:` (col A) / `<company name>` (col B) — identifies the borrower for this tab.
+- **Row 9:** `Borrowers:` label
+- **Row 10:** Borrower entity name (e.g. `Audax DL VII (Cayman), L.P.`)
 
-`summary_rows_above_header = 0` *(preamble is dealt with by title anchor detection, not summary-row skipping)*
+`summary_rows_above_header = 0`
 
 ### LP Category Group Sections *(LP_GRID tab)*
 
@@ -58,8 +61,8 @@ No cell-format legend defined for this template.
 
 ## Recognition Signatures
 
-- **Title anchor:** Row 4, contains `"Deal Name:"` followed by the borrower name.
-- **Detection strategy:** Match `"Deal Name:"` pattern in row 4 of any sheet named `Investor List`.
+- **Title anchor:** Row 4, col A = `"Deal Name:"` — pattern match; borrower name in col B.
+- **Tab detection:** Any tab where row 4 col A contains "Deal Name:" is a valid LP_GRID sleeve.
 - **Detection keys:** `audax`
 
 ---
@@ -71,7 +74,7 @@ No cell-format legend defined for this template.
 | `template_class` | B |
 | `has_grouping_rows` | false |
 | `has_color_flags` | false |
-| `tranche_count` | 1 *(each borrower tab extracted independently; set to number of active tabs at ingest time)* |
+| `tranche_count` | 3 *(Nerdio + Apptio + Marlin)* |
 | `summary_rows_above_header` | 0 |
 | `header_row_span` | 1 |
 
@@ -85,13 +88,15 @@ To register this template via the **BB Template Management** screen → **Upload
 
 | agent_bank | template_class | sheet_name | header_row_index | auto_learned | tranche_count | has_grouping_rows | has_color_flags | summary_rows_above_header |
 |---|---|---|---|---|---|---|---|---|
-| Audax Fund VII | B | Investor List | 13 | false | 1 | false | false | 0 |
+| Silicon Valley Bank (Audax Fund VII) | B | Nerdio | 12 | false | 3 | false | false | 0 |
 
 ### Sheet 2: `Tabs` *(one header row + one row per tab)*
 
-| tab_role | tab_sort | sheet_name | header_row_index | header_row_span | skip_row_keywords |
-|---|---|---|---|---|---|
-| LP_GRID | 1 | Investor List | 13 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| tab_role | tab_sort | sheet_name | sleeve_name | header_row_index | header_row_span | skip_row_keywords |
+|---|---|---|---|---|---|---|
+| LP_GRID | 1 | Nerdio | Nerdio | 12 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 2 | Apptio | Apptio | 12 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 3 | Marlin | Marlin | 12 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
 
 ### Sheet 3: `Groups` *(one header row — no data rows; no group sections)*
 

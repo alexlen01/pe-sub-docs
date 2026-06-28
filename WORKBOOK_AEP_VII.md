@@ -2,7 +2,7 @@
 
 **Template ID:** `aep-vii`
 **Template Class:** A — Full BB Schedule, group-header classification, numerical ratings, advance rates. Cell-format legend encodes LP-level delta flags.
-**Agent Bank (placeholder):** AEP VII *(update to real agent bank when facility is onboarded)*
+**Agent Bank:** JPMorgan Chase Bank, N.A.
 
 ---
 
@@ -14,17 +14,17 @@ Single-tab workbook.
 
 | Role | Sort | Sheet Name | Header Row | Header Span | Notes |
 |------|------|------------|------------|-------------|-------|
-| LP_GRID | 1 | `BB` | 11 | 1 | Single-tab workbook |
+| LP_GRID | 1 | `BB` | 10 | 1 | Single-tab workbook |
 
 ### Preamble / Summary Block
 
-Rows 2–9 (3–9 if title is row 2) above the header row at row 11. `summary_rows_above_header = 9` *(rows 2–10 — title + 8 summary rows before the row-10 column-label spacer, actual data at row 11)*.
+Rows 2–9 (8 rows) above the header row at row 10.
 
 - **Row 2:** `AURORA EQUITY PARTNERS VII LP` — fund identity anchor.
-- **Rows 3–9:** Facility-level summary metrics.
-- **Row 10:** Column separator or blank line preceding header.
+- **Row 3:** `Agent Bank | JPMorgan Chase Bank, N.A.`
+- **Rows 4–9:** As Of Date, Currency, Total Investors, Total Commitment, Total Funded/Unfunded Commitment.
 
-`summary_rows_above_header = 9`
+`summary_rows_above_header = 8`
 
 ### LP Category Group Sections *(LP_GRID tab)*
 
@@ -37,7 +37,7 @@ Rows 2–9 (3–9 if title is row 2) above the header row at row 11. `summary_ro
 
 Each section header row is followed by LP rows, then a subtotal row.
 
-### Column Headers *(LP_GRID tab, row 11)*
+### Column Headers *(LP_GRID tab, row 10)*
 
 | # | Agent Header (verbatim) | Canonical Field (nearest) | Notes |
 |---|-------------------------|---------------------------|-------|
@@ -69,6 +69,8 @@ Cell formatting encodes LP-level delta flags. **Capture during extraction alongs
 | Blue text (font color) | LP has a change in Commitment Amount since the prior certificate |
 | Underlined text | LP has a change in LP Category since the prior certificate |
 
+Legend block appears at rows 60–64 (below last LP section).
+
 `has_color_flags = true` — the extraction engine must capture fill-color and font-color metadata for each LP row.
 
 ---
@@ -77,6 +79,7 @@ Cell formatting encodes LP-level delta flags. **Capture during extraction alongs
 
 - **Title anchor:** Row 2, contains `"AURORA EQUITY PARTNERS VII"`.
 - **Sheet name:** `BB`
+- **Agent bank:** Row 3, col B = `JPMorgan Chase Bank, N.A.`
 - **Detection strategy:** Match fund name in title cell at row 2 of the `BB` sheet.
 - **Detection keys:** `aurora equity`, `aep vii`
 
@@ -90,7 +93,7 @@ Cell formatting encodes LP-level delta flags. **Capture during extraction alongs
 | `has_grouping_rows` | true |
 | `has_color_flags` | true |
 | `tranche_count` | 1 |
-| `summary_rows_above_header` | 9 |
+| `summary_rows_above_header` | 8 |
 | `header_row_span` | 1 |
 
 ---
@@ -103,13 +106,13 @@ To register this template via the **BB Template Management** screen → **Upload
 
 | agent_bank | template_class | sheet_name | header_row_index | auto_learned | tranche_count | has_grouping_rows | has_color_flags | summary_rows_above_header |
 |---|---|---|---|---|---|---|---|---|
-| AEP VII | A | BB | 11 | false | 1 | true | true | 9 |
+| JPMorgan Chase Bank, N.A. | A | BB | 9 | false | 1 | true | true | 8 |
 
 ### Sheet 2: `Tabs` *(one header row + one row per tab)*
 
 | tab_role | tab_sort | sheet_name | header_row_index | header_row_span | skip_row_keywords |
 |---|---|---|---|---|---|
-| LP_GRID | 1 | BB | 11 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 1 | BB | 9 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
 
 ### Sheet 3: `Groups` *(one header row + one row per group section)*
 

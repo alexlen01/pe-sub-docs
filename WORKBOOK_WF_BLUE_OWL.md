@@ -4,6 +4,10 @@
 **Template Class:** A — Full BB Schedule. Two tranches (Tranche A, Tranche B), each with its own `Agent BB` tab. Per-section LP category group headers. Cell-format legend encodes LP transfer and reclassification flags.
 **Agent Bank:** Wells Fargo Bank *(current administrative agent for Blue Owl GP Stakes V)*
 
+> **Note:** No sample Excel file exists in `pe-sub-platform/public` for this template. This WORKBOOK doc is
+> based on prior agent-bank analysis. The Goldman Sachs legacy format (`gs-blue-owl`) has a sample file;
+> this WF format does not. When a WF sample is received, re-parse and verify all row anchors below.
+
 ---
 
 ## Workbook Layout
@@ -12,12 +16,14 @@
 
 Multi-tab workbook with one `Agent BB` tab per tranche.
 
-| Role | Sort | Sheet Name | Header Row | Header Span | Notes |
-|------|------|------------|------------|-------------|-------|
-| LP_GRID | 1 | `Agent BB` | 18 | 1 | Tranche A — first `Agent BB` tab |
-| LP_GRID | 2 | `Agent BB` | 18 | 1 | Tranche B — second `Agent BB` tab |
+| Role | Sort | Sheet Name | Sleeve Name | Header Row | Header Span | Notes |
+|------|------|------------|-------------|------------|-------------|-------|
+| LP_GRID | 1 | `Agent BB` | Tranche A | 18 | 1 | Tranche A — first `Agent BB` tab |
+| LP_GRID | 2 | `Agent BB` | Tranche B | 18 | 1 | Tranche B — second `Agent BB` tab |
 
-> **Multi-tab note:** Both tabs share the same sheet name `Agent BB`. The engine distinguishes them by tab order (sort 1 and sort 2). Full multi-tab aggregation across both tranches is required to produce the facility-level LP count and BB total.
+> **Multi-tab note:** Both tabs share the same sheet name `Agent BB`. The engine distinguishes them by
+> tab order (sort 1 and sort 2). Full multi-tab aggregation across both tranches is required to produce
+> the facility-level LP count and BB total.
 
 `tranche_count = 2`
 
@@ -108,16 +114,14 @@ To register this template via the **BB Template Management** screen → **Upload
 
 | agent_bank | template_class | sheet_name | header_row_index | auto_learned | tranche_count | has_grouping_rows | has_color_flags | summary_rows_above_header |
 |---|---|---|---|---|---|---|---|---|
-| Wells Fargo Bank | A | Agent BB | 18 | false | 2 | true | true | 15 |
+| Wells Fargo (Blue Owl GP Stakes V) | A | Agent BB | 17 | false | 2 | true | true | 15 |
 
 ### Sheet 2: `Tabs` *(one header row + one row per tab)*
 
-| tab_role | tab_sort | sheet_name | header_row_index | header_row_span | skip_row_keywords |
-|---|---|---|---|---|---|
-| LP_GRID | 1 | Agent BB | 18 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
-| LP_GRID | 2 | Agent BB | 18 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
-
-> *The unique constraint `(template_id, tab_role)` prevents two LP_GRID tabs. For the multi-tranche case, the extraction engine uses `tranche_count` to process both tabs. Only one LP_GRID row is stored in `bb_template_tabs`.*
+| tab_role | tab_sort | sheet_name | sleeve_name | header_row_index | header_row_span | skip_row_keywords |
+|---|---|---|---|---|---|---|
+| LP_GRID | 1 | Agent BB | Tranche A | 17 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 2 | Agent BB | Tranche B | 17 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
 
 ### Sheet 3: `Groups` *(one header row + one row per group section)*
 

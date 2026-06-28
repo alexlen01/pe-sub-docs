@@ -103,8 +103,11 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 |------|----------|
 | `V1_1__schema.sql` | All DDL — `users`, `facilities`, `lp_records`, `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables |
 | `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers` 5-tier, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`); FM Dictionary — 30 canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), all aliases, blocklist, suggestions; BB template registry (3 agent banks, GS group headers using Agent LP Classification taxonomy); LP rates feed seeded from `lp_records` (effective 2025-01-01, `source='SIMULATED'`) |
-| `V1_8__facility_seed.sql` | *(planned)* `ALTER TABLE facilities ADD COLUMN account_number, loan_amount, maturity_date, collateral_date, bank_status, bank_status_date`; INSERT all 71 facility rows from Agent Bank Summary (Decision 30, 41) |
-| `V1_9__fm_alias_seed.sql` | *(planned)* Bank-scoped FM Dictionary aliases for WELLS_FARGO and SILICON_VALLEY_BANK (Decision 42; §10.2–10.4) |
+| `V1_3`–`V1_10` | BB template registry rows: KKR Ascendant, Audax VII, CCP VII Lev, AEP VII, CP VII, WF Blue Owl, GS Blue Owl, Petershill |
+| `V1_11__multi_tab_support.sql` | `lp_records.fund_sleeve` column; `bb_template_tabs.sleeve_name`; `bb_templates.auto_discover_tabs` |
+| `V1_12__multi_tab_templates.sql` | Audax VII three-sleeve config (Nerdio/Apptio/Marlin); CCP VII Lev auto-discover flag |
+| *(planned V1_13+)* `facility_seed.sql` | INSERT all 71 facility rows from Agent Bank Summary with `account_number`, `loan_amount`, `maturity_date`, `collateral_date`, `bank_status`, `bank_status_date` (Decision 30, 41) |
+| *(planned V1_14+)* `fm_alias_seed.sql` | Bank-scoped FM Dictionary aliases for WELLS_FARGO and SILICON_VALLEY_BANK (Decision 42; §10.2–10.4) |
 
 To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`. V1_1 and V1_2 are the consolidated base — do **not** modify them once a production DB has been initialised; use new numbered files instead (see Decision 44).
 
@@ -140,17 +143,17 @@ To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the 
 
 Stores the LP Master — one record per LP per facility.
 
-Column naming aligned with LP Master schema: `name → investor_name`, `hq → high_qty`, `type → inv_type`.
+Column naming aligned with LP Master schema: API/DTO field names (e.g. `cls`, `uc`, `inc`) differ from DB column names — see MASTER_DB_MAPPING.md for the full mapping.
 
-| Group | Columns |
+| Group | DB columns |
 |-------|---------|
-| Identity & Classification | investor_name, parent, spv, high_qty, inv_type, region, ig, cls, cls_tag |
+| Identity & Classification | investor_name, parent, spv, high_qty, inv_type, region, investment_grade, classification, classification_tag, agent_cls, fund_sleeve |
 | Ratings | sp, mdy, fitch |
 | Financial Scale | aum, nav, pension, pension_funded |
 | Commitment Data | cap_commit, pct_cap_commit, called_cap |
-| Uncalled / Eligible Capital | uc, pct_uncalled, pct_called |
-| Concentration & BB | agent_conc, ubs_conc, agent_rate, abb |
-| Status | inc, rcl, tf |
+| Uncalled / Eligible Capital | uncalled_capital, pct_uncalled, pct_called |
+| Concentration & BB | agent_conc, ubs_conc, agent_excess_conc, ubs_excess_conc, agent_rate, ubs_rate, agent_bb, ubs_bb |
+| Status | included, rcl, recallable_dist, transferee, source_seq |
 | Meta | notes, facility_id (FK → facilities), created_at, updated_at |
 
 Note: `rate` (BUSA advance rate) and computed fields (`ubb`, `delta`, `uec`) are **not stored** — they are derived at runtime by the BB engine from `cls` and `uc`. Only `abb` (agent's submitted BB value) is stored as a source field.
@@ -559,7 +562,7 @@ The platform operates with **two roles** — **Analyst** and **Account/Transacti
 | 2 | `pe-sub-infra` contains Kubernetes manifests, not Terraform | Terraform deferred until Azure architecture is confirmed. Kubernetes manifests enable immediate local cluster deployment and will serve as the basis for AKS when the cloud target is ready |
 | 3 | BB engine implemented in both Java (`pe-sub-api`) and TypeScript (`pe-sub-ui`) | Java engine is authoritative and persists snapshots. TypeScript engine powers client-side live preview in Shadow BB screen. Both must produce identical numbers |
 | 4 | `pe-sub-db` deleted (2026-05-31) | Was a Drizzle ORM schema/seed package, never a runtime dependency. Schema is now defined exclusively by Flyway SQL migrations |
-| 5 | Computed BB fields not stored in `lps` | `rate`, `ubb`, `delta`, `uec` are derived — storing them would create drift risk. Only source fields and `abb` (agent-submitted) are persisted |
+| 5 | Computed BB fields not stored in `lp_records` | `rate`, `ubb`, `delta`, `uec` are derived — storing them would create drift risk. Only source fields and `agent_bb` (agent-submitted) are persisted |
 | 6 | `bb_snapshots.result` as jsonb | Full `BBResult` stored as typed JSON; enables historical reporting without denormalising LP arrays into rows |
 | 7 | Vite dev proxy for `/api` | Avoids CORS config in development; prod will route through Azure Front Door or API Management |
 | 8 | No mock data fallbacks in production services | Service layer returns empty arrays on API failure; no fake data leaks into production UI |
@@ -603,7 +606,7 @@ The platform operates with **two roles** — **Analyst** and **Account/Transacti
 | G7 | **`_eligCache` stale after Configuration screen saves** | Saving config, then navigating away and back returns pre-edit values until page refresh | Module-level promise cache in `configService.ts` is not invalidated by `PUT /api/config/eligibility`; `Configuration/index.tsx` bypasses the cache (calls `api.config.eligibility()` directly) but other consumers still hit the stale cache |
 | G8 | **`wizard_config`, `audit_config`, `report_config` not seeded** | `GET /api/config/wizard`, `/audit`, `/reports` always return 404 | UI falls back to local TypeScript constants transparently, but config is not editable or DB-backed for these three sections |
 | G9 | **Reports: Agent Bank Exposure** | One of four Step 6 report types not implemented | Agent bank exposure endpoint is planned but not built |
-| G10 | **`lps` financial fields stored as `VARCHAR`** | `aum`, `cap_commit`, `uc`, `agent_rate`, `abb`, `agent_conc` etc. are `VARCHAR(50)` columns containing formatted money strings (`"$25.0M"`). Calculations use `BbCalculationService.parseMoney()` to convert at runtime | Should be `NUMERIC` columns; string parsing is fragile and prevents direct SQL aggregation |
+| G10 | **`lp_records` financial fields stored as `VARCHAR`** | `aum`, `cap_commit`, `uncalled_capital`, `agent_rate`, `agent_bb`, `agent_conc` etc. are `VARCHAR(50)` columns containing formatted money strings (`"$25.0M"`). Calculations use `BbCalculationService.parseMoney()` to convert at runtime | Should be `NUMERIC` columns; string parsing is fragile and prevents direct SQL aggregation |
 
 ### Open questions
 
@@ -785,7 +788,7 @@ Header block (fund name, reporting date) followed by a flat LP table. Investors 
 
 ### 10.5 Computed Fields — Extraction vs. Persistence Policy
 
-The following canonical fields appear in agent templates but are computed values, not source data. They must be extracted into the `ExtractionResult` for review in the Extraction Preview screen, but must **not** be persisted to the `lps` table (consistent with Decision 5):
+The following canonical fields appear in agent templates but are computed values, not source data. They must be extracted into the `ExtractionResult` for review in the Extraction Preview screen, but must **not** be persisted to the `lp_records` table (consistent with Decision 5):
 
 | Canonical field | Computed as |
 |---|---|
@@ -798,12 +801,12 @@ The following canonical fields appear in agent templates but are computed values
 
 ### 10.6 New LP Table Fields Required
 
-The following fields are required in the `lps` table to support the full agent template set. None currently exist in the schema.
+The following fields were required in the `lp_records` table to support the full agent template set. Both are now present in `V1_1__schema.sql`.
 
 | Field | Type | Source template(s) | Notes |
 |---|---|---|---|
-| `transferee` | `BOOLEAN NOT NULL DEFAULT FALSE` | Wells Fargo — Template A (Class A, Variant 1) | Set when POI detects blue row background; indicates the LP entered via transfer, not original subscription |
-| `recallable_dist` | `VARCHAR(50)` (or `NUMERIC` per G10 resolution) | Silicon Valley Bank (Template C) | Recallable distributions reduce net unfunded capital; NULL for non-SVB facilities |
+| `transferee` | `BOOLEAN NOT NULL DEFAULT FALSE` | Wells Fargo — Template A (Class A, Variant 1) | ✅ Exists. Set when POI detects blue row background; indicates the LP entered via transfer, not original subscription |
+| `recallable_dist` | `VARCHAR(50)` (or `NUMERIC` per G10 resolution) | Silicon Valley Bank (Template C) | ✅ Exists. Recallable distributions reduce net unfunded capital; NULL for non-SVB facilities |
 
 ---
 
@@ -842,10 +845,10 @@ The following fields are required in the `lps` table to support the full agent t
 | G13 | **FM Dictionary has no bank-scoped aliases for Wells Fargo (either variant) or SVB** | Extraction for all three known templates falls back to heuristic column detection — low field-match confidence and increased unrecognised column count | Requires `V1_8` alias seed migration (Decision 42); full column mappings specified in §10.2–10.4 |
 | G14 | **Class A group-header-row classification detection not implemented** | Wells Fargo Variant 1 (Blue Owl GP Stakes V) and any future Class A agent template will not auto-assign `cls` from group headers; all LPs require manual classification in Wizard Step 5 | `pe-sub-extraction` needs a parsing mode that tracks the current classification group header and stamps it on subsequent LP rows (Decision 34) |
 | G15 | **Class C (SVB) advance rate / BB absence not handled** | SVB extractions will attempt to populate `agent_rate` and `abb` from non-existent columns; extracted values will be null; wizard must not block on these fields | Extraction must suppress missing-field warnings for `AGENT_RATE` and `ABB` on Class C templates; Wizard Step 5 must prompt for classification before BB can be derived (Decisions 34, 43) |
-| G16 | **`lps.transferee` field does not exist** | Wells Fargo Variant 1 blue-row (Transferee) LP flag cannot be captured | Requires new `transferee BOOLEAN NOT NULL DEFAULT FALSE` column on `lps` (Decision 36; §10.6) |
-| G17 | **`lps.recallable_dist` field does not exist** | SVB Recallable Distributions cannot be stored; drawable capital calculation for SVB facilities will be incorrect | Requires new `recallable_dist` column on `lps`; BB engine update for SVB facilities (Decision 38; §10.6) |
+| G16 | ~~**`lp_records.transferee` field does not exist**~~ ✅ **Resolved** | `transferee BOOLEAN NOT NULL DEFAULT FALSE` exists in `V1_1__schema.sql` | POI colour detection still needs implementation (see G18) |
+| G17 | ~~**`lp_records.recallable_dist` field does not exist**~~ ✅ **Resolved** | `recallable_dist VARCHAR(50)` exists in `V1_1__schema.sql` | BB engine update for SVB facilities still needed (Decision 38) |
 | G18 | **Apache POI colour extraction not implemented in `pe-sub-extraction`** | Wells Fargo Variant 1 (Class A) row colour codes (Reclassified / Transferee) are silently ignored | Requires `XSSFCellStyle.getFillForegroundColorColor()` check per row in the Class A extraction path (Decision 36) |
-| G19 | **`bb_templates` registry has no `template_class` column** | Auto-learned template hints (sheet name, header row) are stored per agent bank but template class is not cached; each upload for a multi-format agent (Wells Fargo) must re-run structural detection heuristics | Requires `ALTER TABLE bb_templates ADD COLUMN template_class VARCHAR(10)` and population on first `POST /{id}/confirm` (Decision 43) |
+| G19 | ~~**`bb_templates` registry has no `template_class` column`**~~ ✅ **Resolved** | `template_class VARCHAR(10) NOT NULL DEFAULT 'A'` exists in `V1_1__schema.sql` | — |
 
 ### New open questions
 

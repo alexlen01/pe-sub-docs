@@ -1,7 +1,7 @@
 # PE Sub Platform — Open Questions
 
 > Questions requiring a business or architectural decision before the relevant feature can be built or finalised.
-> Last updated: 2026-06-13.
+> Last updated: 2026-06-28 (Q14 added).
 >
 > **Legend:** 🔴 Blocks Phase 1 build · 🟡 Affects Phase 1 design · 🔵 Phase 2 / deferred
 
@@ -94,6 +94,34 @@ Some facilities carry an overall class concentration limit (e.g. a cap on total 
 
 ---
 
+### Q13 — Advance Rate Schedule tables: correct tier values and Concentration Limit column 🔴
+
+The **Admin → Configuration** screen displays two tables — **BUSA Advance Rate Schedule** and **Agent Advance Rate Schedule** — each with a `CLASSIFICATION` column and a `RATE (%)` column. Both are currently seeded with identical placeholder values (Rated 90%, Unrated AUM >$2bn 75%, Unrated AUM $1–2bn 65%, Eligible <$1bn 50%, Excluded 0%). Neither has a Concentration Limit column.
+
+**Current code locations (for reference):**
+- DB seed: `pe-sub-api/.../V1_2__seed.sql` — `busa_tiers` and `agent_tiers` JSONB config keys seeded identically.
+- Frontend: `pe-sub-ui/src/config/eligibilityConfig.ts` — `BUSA_TIERS` and `AGENT_TIERS` arrays, same values.
+- Calculation engine: `BbCalculationService.java` and `bbCalculationService.ts` — hardcoded `BUSA_RATES` map consumed by all BB runs.
+- Portfolio-level concentration limits exist separately as global constants (`CONC_LIMITS`) — not tied to classification tier.
+
+**Questions for PE Sub Management Team:**
+
+**Rate values (blocks seeding correct data):**
+1. What are the correct BUSA (UBS) tier names and advance rate percentages? Are the current five tiers and rates listed above correct, or do they need to change?
+2. What are the correct Agent tier names and advance rate percentages? Are they a completely different schedule from BUSA, or the same tier names with different rates?
+
+**Concentration Limit column (blocks schema design):**
+3. Should each classification tier in both schedules carry its own Concentration Limit (%)? For example: a Rated LP may have a 90% advance rate and a 15% CL, while an Unrated LP has 75% and 10%.
+4. If yes, are the BUSA concentration limits and the Agent concentration limits independently defined, or do they share the same CL schedule?
+5. Is the per-tier CL checked at **eligibility** time (commitment), at **BB calculation** time (breach detection), or both?
+
+**Scope:**
+6. Should Admin users be able to edit these schedules via the Configuration screen (the PUT endpoint already exists), or are they policy-locked and only changeable via a database migration/release?
+
+**Impact:** Confirmed tier values unblock correcting the seed data and hardcoded maps. A per-tier Concentration Limit column changes the JSONB schema in the `config` table, the `RateTier` TypeScript type, the `BbCalculationService` breach logic (currently using the separate global `CONC_LIMITS` object), and the Configuration screen UI. Q8 (class-level CL per facility vs global) is a related but separate concern.
+
+---
+
 ## 4. Template & Extraction
 
 ### Q9 — Missing agent bank templates: onboarding plan and timeline 🟡
@@ -111,6 +139,27 @@ For agent BB templates that cannot be expressed as structural rules (new classif
 **Current position (agreed 2026-06-13):** Heuristic-first. AI extraction is not suitable for direct write to LP Master in a production financial controls environment (non-deterministic, audit trail concerns). If considered at all, it should be a pre-processing suggestion step requiring credit officer confirmation — not automatic ingestion.
 
 **Confirm when relevant:** Revisit only if a template class emerges that genuinely cannot be handled by the existing heuristic + alias + section-row pipeline.
+
+---
+
+### Q14 — Feeder tab handling: investor type and LP classification mapping 🔴
+
+Raised from CCP-VII (Comvest Credit Partners VII, LP). Agent BB workbooks may contain **Feeder tabs** representing aggregation vehicles for specific investor categories:
+
+- **Cayman / Offshore Feeder** — typically aggregates non-US and tax-exempt institutional investors (sovereign wealth funds, foreign pension funds).
+- **Delaware / Onshore Feeder** — typically aggregates US taxable investors.
+
+**Current extraction behaviour:** The multi-tab engine can parse all tabs and tag each LP record with a `fundSleeve` value matching the tab name (e.g. `"Cayman Feeder"`, `"Delaware Feeder"`). This is already implemented for CCP-VII via `auto_discover_tabs`.
+
+**What is unresolved:** `fundSleeve` alone does not convey investor type or LP classification. Further derivation — mapping a feeder tab to an **Investor Type** (e.g. `Non-US / Tax-Exempt`, `US Taxable`) or to a specific **LP Classification / Rate tier** (Rated, Unrated, Eligible, Excluded) — is structurally complex and cannot be inferred reliably from the tab name alone.
+
+**Options to confirm:**
+
+- (a) **Manual override only** — Credit officers assign Investor Type and LP Classification manually via the dropdowns on the LP Classification & Rate Aggregation screen after ingestion. The system makes no automatic assumption based on feeder tab name.
+- (b) **System suggestion with manual confirmation** — The extraction engine applies a configurable tab-name-to-investor-type mapping (e.g. `"Cayman"` → `Non-US / Tax-Exempt`) as a default that the credit officer can override.
+- (c) **Feeder tabs excluded from extraction** — Feeder LP records are skipped during ingestion; only the "master" or consolidated tab is processed.
+
+**Impact:** Determines whether the existing `lp_records.inv_type` column is sufficient to capture feeder-derived investor type (it already exists; the question is whether values can be reliably derived from tab name alone), whether the LP Classification & Rate Aggregation screen must surface a bulk-assign workflow for feeder-sourced records, and whether any tab-name alias config is needed in the extraction service.
 
 ---
 

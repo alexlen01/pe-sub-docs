@@ -1,8 +1,8 @@
 # Agent BB Workbook Structure: CCP VII Lev M & M
 
 **Template ID:** `ccp-vii-lev`
-**Template Class:** C — Simplified Callable Capital. No ratings columns; no advance-rate columns. Binary `Included/Excluded` eligibility logic. Group-header rows identify feeder vehicle structures, not credit tiers.
-**Agent Bank (placeholder):** CCP VII Lev M & M *(update to real agent bank when facility is onboarded)*
+**Template Class:** C — Simplified Callable Capital. No ratings columns; no advance-rate columns. Binary `Included/Excluded` eligibility logic. Each feeder vehicle is its own named Excel tab.
+**Agent Bank:** Silicon Valley Bank
 
 ---
 
@@ -10,34 +10,34 @@
 
 ### Tabs
 
-Multi-tab workbook. One `Investor List` tab per borrower entity. Each tab carries the same column structure.
+Multi-tab workbook. **One tab per feeder vehicle.** Tab names reflect the feeder entity name directly; they do NOT use a generic "Investor List" label.
 
-| Role | Sort | Sheet Name | Header Row | Header Span | Notes |
-|------|------|------------|------------|-------------|-------|
-| LP_GRID | 1 | `Investor List` | 7 | 1 | Repeat pattern — one tab per borrower |
+| Role | Sort | Sheet Name (verbatim) | Sleeve Name | Header Row | Header Span | Notes |
+|------|------|----------------------|-------------|------------|-------------|-------|
+| LP_GRID | 1 | `Levered (DE) Feeder` | Levered (DE) Feeder | 7 | 1 | Delaware levered feeder vehicle |
+| LP_GRID | 2 | `(Cayman) Feeder, L.P.` | (Cayman) Feeder, L.P. | 7 | 1 | Cayman feeder vehicle |
+| LP_GRID | 3 | `(Delaware) Feeder, L.P.` | (Delaware) Feeder, L.P. | 7 | 1 | Delaware feeder vehicle |
+| LP_GRID | 4 | `Lux Intermediate` | Lux Intermediate | 7 | 1 | Luxembourg intermediate vehicle |
+| LP_GRID | 5 | `Lux Non-Treaty Feeder` | Lux Non-Treaty Feeder | 7 | 1 | Luxembourg non-treaty feeder |
+
+> **Auto-discover:** Because tab names may change between workbook versions (new feeder vehicles added,
+> names adjusted), `auto_discover_tabs = true` is set in the DB. The extraction engine scans all sheets,
+> detects the LP table structure, and extracts from any sheet that passes header detection at row 7.
 
 ### Preamble Block
 
-Rows 1–6 precede the header row at row 7.
-- **Row 3:** `Comvest Credit Partners VII, LP.` — fund identity anchor.
+Each tab has rows 1–6 above the header:
+- **Row 3:** `Comvest Credit Partners VII, LP.` — fund identity anchor on every tab.
 
 `summary_rows_above_header = 0`
 
-### LP Category Group Sections *(LP_GRID tab)*
+### LP Category Group Sections *(within each tab)*
 
-Group-header rows in this template identify **feeder vehicle structures**, not credit-tier LP categories. The per-row `Excluded` column (col 2) determines eligibility. Group classification is set to `Included` as a structural placeholder.
+**None.** There are **no in-tab group header rows**. The feeder vehicle identity is encoded in the tab name itself (= the sleeve name). The per-row `Excluded` column (col 2) determines eligibility. `has_grouping_rows = false`.
 
-| Sort | Section Header Text (verbatim) | Canonical LP Classification |
-|------|--------------------------------|-----------------------------|
-| 1 | `Levered (Delaware) Feeder` | Included |
-| 2 | `(Cayman) Feeder, L.P.` | Included |
-| 3 | `(Delaware) Feeder, L.P.` | Included |
-| 4 | `Lux Intermediate` | Included |
-| 5 | `Lux Non-Treaty Feeder` | Included |
+> **Note:** Each tab ends with a single total row `Total — <tab name>` caught by `skip_row_keywords`.
 
-> **Important:** These group headers are structural feeder-vehicle names, not credit tiers. Each feeder group is followed by a total row. The actual LP eligibility is determined by the per-row `Excluded` column value (`TRUE` / `FALSE`). `has_grouping_rows = true` because the engine needs to detect and skip the feeder header rows and their totals.
-
-### Column Headers *(LP_GRID tab, row 7)*
+### Column Headers *(each LP_GRID tab, row 7)*
 
 | # | Agent Header (verbatim) | Canonical Field (nearest) | Notes |
 |---|-------------------------|---------------------------|-------|
@@ -50,7 +50,7 @@ Group-header rows in this template identify **feeder vehicle structures**, not c
 | 7 | `Remaining Callable Capital` | Uncalled Capital | Uncalled + recallable = total callable base |
 | 8 | `Concentration Limit` | Concentration Limit | Per-LP concentration cap |
 
-> **No advance-rate column** — Class C template uses a flat advance rate or binary eligible/excluded logic rather than per-LP advance rates.
+> **No advance-rate column** — Class C template uses binary eligible/excluded logic rather than per-LP advance rates.
 
 ---
 
@@ -63,7 +63,7 @@ No cell-format legend defined for this template.
 ## Recognition Signatures
 
 - **Title anchor:** Row 3, contains `"Comvest Credit Partners"`.
-- **Detection strategy:** Match title text at row 3 of any `Investor List` sheet.
+- **Detection strategy:** Match title text at row 3 of any discovered sheet; header at row 7.
 - **Detection keys:** `comvest`, `ccp vii`
 
 ---
@@ -73,11 +73,12 @@ No cell-format legend defined for this template.
 | Flag | Value |
 |------|-------|
 | `template_class` | C |
-| `has_grouping_rows` | true |
+| `has_grouping_rows` | false |
 | `has_color_flags` | false |
-| `tranche_count` | 1 *(set to number of active tabs at ingest time)* |
+| `tranche_count` | 5 *(one per named feeder tab)* |
 | `summary_rows_above_header` | 0 |
 | `header_row_span` | 1 |
+| `auto_discover_tabs` | true |
 
 ---
 
@@ -89,20 +90,20 @@ To register this template via the **BB Template Management** screen → **Upload
 
 | agent_bank | template_class | sheet_name | header_row_index | auto_learned | tranche_count | has_grouping_rows | has_color_flags | summary_rows_above_header |
 |---|---|---|---|---|---|---|---|---|
-| CCP VII Lev M & M | C | Investor List | 7 | false | 1 | true | false | 0 |
+| Silicon Valley Bank (CCP VII Lev M & M) | C | Levered (DE) Feeder | 6 | false | 5 | false | false | 0 |
 
 ### Sheet 2: `Tabs` *(one header row + one row per tab)*
 
-| tab_role | tab_sort | sheet_name | header_row_index | header_row_span | skip_row_keywords |
-|---|---|---|---|---|---|
-| LP_GRID | 1 | Investor List | 7 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| tab_role | tab_sort | sheet_name | sleeve_name | header_row_index | header_row_span | skip_row_keywords |
+|---|---|---|---|---|---|---|
+| LP_GRID | 1 | Levered (DE) Feeder | Levered (DE) Feeder | 6 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 2 | (Cayman) Feeder, L.P. | (Cayman) Feeder, L.P. | 6 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 3 | (Delaware) Feeder, L.P. | (Delaware) Feeder, L.P. | 6 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 4 | Lux Intermediate | Lux Intermediate | 6 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
+| LP_GRID | 5 | Lux Non-Treaty Feeder | Lux Non-Treaty Feeder | 6 | 1 | Total,Subtotal,Sub-Total,Grand Total,Sum,Net Total |
 
-### Sheet 3: `Groups` *(one header row + one row per feeder group)*
+### Sheet 3: `Groups` *(one header row — no data rows)*
 
 | tab_role | group_sort | header_text | classification |
 |---|---|---|---|
-| LP_GRID | 1 | Levered (Delaware) Feeder | Included |
-| LP_GRID | 2 | (Cayman) Feeder, L.P. | Included |
-| LP_GRID | 3 | (Delaware) Feeder, L.P. | Included |
-| LP_GRID | 4 | Lux Intermediate | Included |
-| LP_GRID | 5 | Lux Non-Treaty Feeder | Included |
+*(empty — no in-tab LP category group sections; feeder identity = tab name)*
