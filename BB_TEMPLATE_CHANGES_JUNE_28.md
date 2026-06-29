@@ -3,7 +3,7 @@
 ## Purpose
 
 Full audit of all 7 Agent BB workbook samples in `pe-sub-platform/public` against the existing
-WORKBOOK_XXX.md docs, `templateProfiles.js`, and Flyway seed migrations. Corrections tracked here
+WORKBOOK_XXX.md docs, `templateProfiles.ts`, and Flyway seed migrations. Corrections tracked here
 before implementation. All row numbers are **1-based Excel rows** unless noted as `0-based index`.
 
 ---
@@ -60,7 +60,7 @@ Each file was parsed using the `xlsx` Node library to read cell values across al
 |------|-------------|--------------|-----|
 | Tab names | "Investor List" (generic pattern) | **Nerdio, Apptio, Marlin** (exact names) | Update WORKBOOK + profiles |
 | V1_12 migration | Uses Nerdio/Apptio/Marlin ✓ | Matches | Migration is correct |
-| templateProfiles.js | `tabLabel: 'Investor List'` | Actual tabs are `Nerdio`, `Apptio`, `Marlin` | Update profiles |
+| templateProfiles.ts | `tabLabel: 'Investor List'` | Actual tabs are `Nerdio`, `Apptio`, `Marlin` | Update profiles |
 
 **Header row 13 (1-based) = index 12 (0-based) — migration V1_4 has 12 ✓**
 
@@ -133,14 +133,14 @@ Each file was parsed using the `xlsx` Node library to read cell values across al
 
 **Bugs found:**
 
-| Item | Current Doc | templateProfiles.js | Actual Excel | Fix |
+| Item | Current Doc | templateProfiles.ts | Actual Excel | Fix |
 |------|-------------|---------------------|--------------|-----|
 | LP category column | "LP Classification" | — | **"Investor Type"** | Fix WORKBOOK + profiles |
 | Group headers | `has_grouping_rows = false` ✓ | **5 group headers listed** ← WRONG | Flat list, zero group headers | Remove group headers from profiles |
 | Missing column | "Fitch" not listed | Not in columns list | **Fitch (col 7)** between Moody's and Advance Rate | Add Fitch to WORKBOOK + profiles |
 
 **GS Blue Owl migration (V1_9) correctly has `has_grouping_rows = FALSE` and no group sections.
-The templateProfiles.js has incorrect group headers — must be removed.**
+The templateProfiles.ts has incorrect group headers — must be removed.**
 
 ---
 
@@ -160,10 +160,10 @@ The templateProfiles.js has incorrect group headers — must be removed.**
 
 **Bugs found:**
 
-| Item | Current Doc | templateProfiles.js | Current Migration (V1_3) | Actual Excel | Fix |
-|------|-------------|---------------------|--------------------------|--------------|-----|
-| Agent bank | TBD | `fund: 'JP Morgan'` — WRONG | `JP Morgan (KKR Ascendant Fund)` — WRONG | **KKR Capital Markets** | Fix template_name + profiles |
-| Header row | 10 (1-based) ✓ | 10 ✓ | index 9 (0-based) ✓ | Row 10 confirmed ✓ | No change |
+| Item | Current Doc / profiles.ts | Actual Excel | Fix |
+|------|--------------------------|--------------|-----|
+| Agent bank | `fund: 'JP Morgan'` — WRONG | **KKR Capital Markets** | Fix template_name + profiles |
+| Header row | 10 (1-based) ✓ | index 9 (0-based) ✓ | Row 10 confirmed ✓ | No change |
 
 ---
 
@@ -184,7 +184,7 @@ The templateProfiles.js has incorrect group headers — must be removed.**
 
 **Bugs found:**
 
-| Item | Current Doc / profiles.js | Actual Excel | Fix |
+| Item | Current Doc / profiles.ts | Actual Excel | Fix |
 |------|--------------------------|--------------|-----|
 | Title anchor | "Petershill Partners IV – Borrowing Base" / "Petershill IV … Borrowing Base (Proposed)" | **"Petershill IV and Petershill IV Offshore SCSp – Subscription Facility Borrowing Base"** | Fix detection text |
 | Group 2 header | `"Inlcuded Investors (Non-Rated)"` (typo annotated) | **"Included Investors (Non-Rated)"** — NO TYPO | Fix; remove typo annotation |
@@ -204,49 +204,179 @@ parse of a current sample). Verified from migration:
 
 ---
 
-## Implementation Plan
+## Migration Cleanup — 2026-06-28
 
-### Phase 1: WORKBOOK Docs
-Update all 8 `WORKBOOK_XXX.md` files with ground-truth data.
+All BB template seed data removed from migration files as part of the June 28 overhaul:
 
-### Phase 2: templateProfiles.js
-- Fix `kkr-ascendant`: `fund` → `'KKR Capital Markets'`
-- Fix `aep-vii`: `headerRow` → `10`
-- Fix `gs-blue-owl`: remove group headers; fix column name; add Fitch
-- Fix `petershill-iv`: title text; fix group 2 spelling; add `fund: 'Goldman Sachs Bank USA'`; add `Eligible Commitments` to skip keywords
-- Fix `audax-vii`: tab info (Nerdio/Apptio/Marlin)
-- Fix `ccp-vii-lev`: tab info (5 named feeder tabs); no in-tab group headers
-- Fix `cp-vii`: tab label → `['BB - Onshore', 'BB - Offshore']`
-- **Add `wf-blue-owl`** profile (currently missing entirely)
+| Migration | Action | Reason |
+|-----------|--------|--------|
+| V1_3 through V1_10 | **Cleared** (stub comment only) | Wrong agent banks, wrong tab names, wrong header rows, schema gaps |
+| V1_12 | **Cleared** (stub comment only) | Multi-tab data dependent on cleared V1_3–V1_10 rows |
+| V1_1, V1_2, V1_11, V1_13 | **Untouched** | DDL schema, field mapping seed, schema ALTER TABLE, UI config |
 
-### Phase 3: Flyway Migration V1_13
-Fix seeded data errors that affect runtime extraction:
-1. AEP VII: `header_row_index` 10 → **9**; `summary_rows_above_header` 9 → **8**
-2. KKR Ascendant: template_name `JP Morgan (KKR Ascendant Fund)` → **`KKR Capital Markets (KKR Ascendant Fund)`**
-3. CP VII: template_name → **`Bank of America (CP VII)`**; tab `sheet_name` → **`BB - Onshore`**; add second tab **`BB - Offshore`**
-4. WF Blue Owl: `D. Excluded Investors` classification → **`Ineligible Investors`**
-
-### Phase 4: BBTemplates/index.jsx — Edit Template + Tab Management
-- Add **Edit Template** panel (slide-in or inline expansion)
-- Tab grid: add/remove/reorder tabs, edit `sheet_name`, `sleeve_name`, `header_row_index`, `header_row_span`, `skip_row_keywords`
-- Group headers grid per tab: add/remove groups with `header_text` + `classification` dropdowns
-- **Fund Sleeve mapping** panel: visual mapping of tab → sleeve name
-- Wire to existing `PUT /api/bb-templates/{id}` endpoint
+Templates will be re-seeded one at a time via `V1_14+` after schema extension (see Phase 2 below).
 
 ---
 
-## Files Changed
+## Solution Design — Template Recognition Overhaul
 
-| File | Type | Change |
-|------|------|--------|
-| `pe-sub-docs/WORKBOOK_AEP_VII.md` | Doc | Header row 10; summary 8; agent bank |
-| `pe-sub-docs/WORKBOOK_AUDAX_VII.md` | Doc | Named tabs (Nerdio/Apptio/Marlin) |
-| `pe-sub-docs/WORKBOOK_CCP_VII_LEV.md` | Doc | Named feeder tabs; no in-tab groups |
-| `pe-sub-docs/WORKBOOK_CP_VII.md` | Doc | Agent bank BofA; tab names BB-Onshore/Offshore |
-| `pe-sub-docs/WORKBOOK_GS_BLUE_OWL.md` | Doc | "Investor Type" col; no group headers; add Fitch |
-| `pe-sub-docs/WORKBOOK_KKR_ASCENDANT.md` | Doc | Agent bank KKR Capital Markets |
-| `pe-sub-docs/WORKBOOK_PETERSHILL.md` | Doc | Title text; no typo in group 2; Eligible Commitments skip |
-| `pe-sub-docs/WORKBOOK_WF_BLUE_OWL.md` | Doc | Note no sample file; fix classification |
-| `pe-sub-platform/src/data/templateProfiles.js` | Frontend | All template fixes + wf-blue-owl added |
-| `pe-sub-api/.../V1_13__bb_template_corrections.sql` | Migration | AEP VII, KKR, CP VII, WF Blue Owl data fixes |
-| `pe-sub-platform/src/screens/BBTemplates/index.jsx` | Frontend | Edit Template + tab/sleeve management UI |
+### Background: Prototype vs. DB Schema Gap
+
+The `pe-sub-platform` prototype (`BBTemplates/index.jsx` + `data/templateProfiles.ts`) was built
+after re-evaluation of the 7 Agent BB workbook samples. It uses a **significantly richer data model**
+than what the DB schema currently stores. The prototype treats `TemplateProfile` as the source of truth
+for both recognition and display. The DB schema must be extended to match before re-seeding.
+
+### Prototype TemplateProfile Fields vs. Current DB Schema
+
+| TemplateProfile field | Type | In `bb_templates` table? | In `bb_template_tabs` table? | Action |
+|-----------------------|------|--------------------------|------------------------------|--------|
+| `id` (kebab slug) | `string` | ✗ — only numeric `id` | — | Add `template_slug VARCHAR(50) UNIQUE` to `bb_templates` |
+| `fund` (agent bank name) | `string` | ✓ via `template_name` | — | Map `template_name` → rename to `agent_name`; or add `agent_name` column |
+| `workbook.tabs` | `'single'`\|`'multiple'` | Derivable from tab count | — | Derive; no column needed |
+| `workbook.tabLabel` | `string` | ✗ | ✓ via `sheet_name` | Map to `bb_template_tabs.sheet_name`; update prototype to use array |
+| `title.row` | `number` | ✗ | — | Add `title_row INTEGER` to `bb_templates` |
+| `title.text` | `string` | ✗ | — | Add `title_text TEXT` to `bb_templates` |
+| `summaryRows` | `string` (e.g. `"2-9"`) | Partial: `summary_rows_above_header INTEGER` | — | Replace with `summary_row_range VARCHAR(20)` |
+| `headerRow` | `number`\|`string` (e.g. `"84-85"`) | ✓ via `header_row_index` | ✓ via `header_row_index` + `header_row_span` | Existing fields are sufficient; stacked = index + span > 1 |
+| `groupHeaders[]` | `string[]` | ✗ direct | ✓ via `bb_template_groups.header_text` | Existing join covers this |
+| `columns[]` | `string[]` — ordered column names | ✗ | ✗ | Add `columns JSONB` to `bb_template_tabs` |
+| `legend[]` | `{style, meaning}[]` | ✗ | ✗ | Add `legend JSONB` to `bb_templates` |
+| `notes[]` | `string[]` | ✗ | ✗ | Add `notes JSONB` to `bb_templates` |
+| `detectKeys[]` | `string[]` | ✗ | ✗ | Add `detect_keys JSONB` to `bb_templates` |
+
+### Phase 1 — Schema Extension (V1_14)
+
+```sql
+-- New recognition and display fields on bb_templates
+ALTER TABLE bb_templates
+    ADD COLUMN IF NOT EXISTS template_slug    VARCHAR(50)  UNIQUE,
+    ADD COLUMN IF NOT EXISTS agent_name       VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS title_row        INTEGER,
+    ADD COLUMN IF NOT EXISTS title_text       TEXT,
+    ADD COLUMN IF NOT EXISTS summary_row_range VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS detect_keys      JSONB NOT NULL DEFAULT '[]',
+    ADD COLUMN IF NOT EXISTS legend           JSONB NOT NULL DEFAULT '[]',
+    ADD COLUMN IF NOT EXISTS notes            JSONB NOT NULL DEFAULT '[]';
+
+-- Ordered column names per tab (drives ExtractionPreview column list)
+ALTER TABLE bb_template_tabs
+    ADD COLUMN IF NOT EXISTS columns JSONB NOT NULL DEFAULT '[]';
+```
+
+### Phase 2 — Template Re-seeding (V1_15 through V1_22, one per template)
+
+One migration per template, authored after confirming ground-truth from the WORKBOOK file.
+Each migration must set ALL new fields added in V1_14.
+
+Order: KKR Ascendant → AEP VII → GS Blue Owl → Petershill IV → Audax Fund VII → CCP VII Lev → CP VII → WF Blue Owl
+
+---
+
+## Template Recognition Design
+
+### Recognition Signal Hierarchy
+
+The extraction engine evaluates signals in priority order, stopping at the first confident match:
+
+| Priority | Signal Type | Confidence | Notes |
+|----------|-------------|------------|-------|
+| 1 | **Filename keyword match** | Very High | Most reliable when files follow naming convention |
+| 2 | **Exact named tab presence** | Very High | Unique tab names (Nerdio/Apptio/Marlin) are fund-specific |
+| 3 | **Title anchor text** at known row | High | Fund name in cell R1–R4 is unique per template |
+| 4 | **Agent bank cell** (R2–R3 typically) | High | Disambiguates same-fund / different-agent scenarios |
+| 5 | **Column header profile match** | Medium | Jaro-Winkler ≥ 0.95 against known column sets; use as tiebreaker |
+
+### Per-Template Recognition Specification
+
+| Template ID | Filename Signal | Named Tab Signal | Title Anchor | Agent Bank Cell | Column Fingerprint | Skip Row Keywords |
+|-------------|----------------|-----------------|--------------|-----------------|-------------------|-------------------|
+| `kkr-ascendant` | `*KKR*Ascendant*` | Single: `Borrowing Base` | R2: `KKR Ascendant – Borrowing Base` | R3 col B: `KKR Capital Markets` | `Fund Sleeve` col unique to this template | `Rated Included Investors`, `Non-Rated Included Investors`, `Designated Investors`, `Borrowing Base Investors`, `Hurdle Investors`, `Excluded Investors`, `Total`, `Subtotal` |
+| `aep-vii` | `*AEP*VII*` | Single: `BB` | R2: `AURORA EQUITY PARTNERS VII LP` | R3 col B: `JPMorgan Chase Bank, N.A.` | No `Fund Sleeve` col; has `Eligible Unfunded Commitment` | `Rated Included Investors`, `Non-Rated Included Investors`, `Designated Investors`, `Excluded Investors`, `Total`, `Subtotal` |
+| `audax-vii` | `*Audax*Fund*VII*` | Multiple — any tab named exactly `Nerdio`, `Apptio`, or `Marlin` | R4 col A: `Deal Name:` (label); R4 col B: borrower name | — not present | `GA ID`, `Borrowing Partnership`, `Included/Excluded Investor` columns | `Total`, `Subtotal`, `Grand Total` |
+| `ccp-vii-lev` | `*CCP*VII*Lev*` | Multiple — tab names contain `Feeder` or `Lux`; auto-discover mode | R3 col A: `Comvest Credit Partners VII` | — not present | `Defaulting?`, `Claimed/Exercised Rights?`, `Recallable Distribution` columns | `Total`, `Subtotal`, `Total —` |
+| `cp-vii` | `*CP*VII*` | Multiple — tabs named exactly `BB - Onshore` and `BB - Offshore` | R1 col A: `Carlyle Partners VII` (early) + R83: `Carlyle Partners VII` (deep) | R2 col B: `Bank of America, N.A.` | Stacked header (rows 84–85); `Availability` column unique | `Total`, `Subtotal`, `Grand Total` |
+| `gs-blue-owl` | `*Blue*Owl*GP*Stakes*` or `*Blue*Owl*GP*V*` | Single: `Borrowing Base` | R1 col A: `Blue Owl GP Stakes V` | — not explicit in title row | `Investor Type`, `Fitch` columns; ~900 LP flat list | `Total`, `Subtotal` |
+| `petershill-iv` | `*Petershill*IV*` | Single: `Borrowing Base` | R2 col A: `Petershill IV and Petershill IV Offshore SCSp` | — not in title; GS is agent but not identified in header cells | `Deal Investor Name`, `NAV Range (USD)`, `% of Borrowing Base` columns | `Included Investors (Rated)`, `Included Investors (Non-Rated)`, `Institutional Designated Investors`, `PWM Designated Investors`, `Excluded Investors`, `Eligible Commitments`, `Total`, `Subtotal` |
+| `wf-blue-owl` | `*WF*Blue*Owl*` or `*Wells*Fargo*Blue*Owl*` | TBD — no sample file | TBD | Wells Fargo | TBD | TBD |
+
+### Disambiguation: GS Blue Owl vs. Petershill IV vs. KKR Ascendant
+
+All three use a single tab named `Borrowing Base`. Disambiguation sequence:
+1. Filename keyword → fastest, most reliable
+2. R1/R2 title text → fund name is unique per template
+3. Column presence: `Deal Investor Name` = Petershill; `Fund Sleeve` = KKR; `Investor Type` + `Fitch` = GS Blue Owl
+
+### Disambiguation: Audax Fund VII tabs vs. CCP VII tabs (both multi-tab)
+
+| Signal | Audax Fund VII | CCP VII Lev |
+|--------|---------------|-------------|
+| Tab names | Exact: Nerdio, Apptio, Marlin | Contain "Feeder" or "Lux" |
+| Title cell | R4 col A: `Deal Name:` | R3 col A: `Comvest Credit Partners VII` |
+| Column: R7/R13 | `GA ID`, `Borrowing Partnership` | `Defaulting?`, `Claimed/Exercised Rights?` |
+| Auto-discover | FALSE (tabs named exactly) | TRUE (tab names vary per workbook) |
+
+### Operator Override
+
+When auto-detection picks the wrong template (or detection confidence is below threshold),
+the operator selects the correct template from a dropdown in the ExtractionPreview UI.
+The selection is stored in `submission_extractions.forced_template` and applied on all
+subsequent re-extractions of the same submission.
+
+---
+
+## Structural Changes Required in `bb_template_tabs`
+
+The prototype treats **multiple LP_GRID tabs** (Audax Fund VII: Nerdio/Apptio/Marlin) as
+**named sleeve tabs** — each has its own `sheet_name`, `sleeve_name`, and `columns`.
+
+The current schema constraint `uq_template_tab_sort` (added V1_11) supports multiple LP_GRID rows
+per template. V1_14 adds `columns JSONB` to each tab row, so column order is tab-specific.
+
+For CCP VII with `auto_discover_tabs = TRUE`, the single LP_GRID tab row acts as a
+**header template** — it supplies `header_row_index`, `header_row_span`, and `columns`
+that the engine applies to every discovered sheet.
+
+---
+
+## BBTemplates Screen — Prototype vs. pe-sub-ui Comparison
+
+The prototype `BBTemplates/index.jsx` renders a richer registry than `pe-sub-ui/src/screens/BBTemplates/index.tsx`:
+
+| Feature | Prototype (pe-sub-platform) | pe-sub-ui |
+|---------|-----------------------------|-----------|
+| Table columns | Template ID, Agent/Fund, Workbook Tabs, Tab Label, Header Row, # Cols, # Groups, Notes | Fetches from `/api/bb-templates` — no dedicated columns list |
+| Detail panel | Columns Extracted (numbered list), LP Category Group Headers, Cell Format Legend, Notes, Structure metadata | None |
+| Edit button | **None** — read-only registry | None |
+| Import button | Present (not wired) | None |
+| Template ID display | kebab slug (`kkr-ascendant`) | Numeric DB id |
+
+The prototype design is the **target state**. `pe-sub-ui/BBTemplates` needs a rebuild to match it
+once the V1_14 schema is in place and `/api/bb-templates` returns the new fields.
+
+---
+
+## Files Changed — June 28 Session
+
+| File | Change |
+|------|--------|
+| `pe-sub-api/.../V1_3` through `V1_10` | **Cleared** — BB template INSERTs removed |
+| `pe-sub-api/.../V1_12` | **Cleared** — Multi-tab template INSERTs removed |
+| `pe-sub-docs/BB_TEMPLATE_CHANGES_JUNE_28.md` | Added: Migration Cleanup section, Solution Design, Recognition Specification, Schema Gap analysis |
+
+## Pending Work (next session)
+
+| Step | Migration | Description |
+|------|-----------|-------------|
+| 1 | V1_14 | Schema extension: add `template_slug`, `agent_name`, `title_row`, `title_text`, `summary_row_range`, `detect_keys`, `legend`, `notes` to `bb_templates`; add `columns` to `bb_template_tabs` |
+| 2 | V1_15 | Re-seed KKR Ascendant Fund (correct agent: KKR Capital Markets) |
+| 3 | V1_16 | Re-seed AEP VII (correct header_row=9, summary_rows=8, agent: JPMorgan Chase Bank N.A.) |
+| 4 | V1_17 | Re-seed GS Blue Owl (flat list, no group headers, add Fitch, Investor Type) |
+| 5 | V1_18 | Re-seed Petershill IV (correct title, correct group header spellings, Eligible Commitments skip) |
+| 6 | V1_19 | Re-seed Audax Fund VII (3 named sleeve tabs: Nerdio/Apptio/Marlin) |
+| 7 | V1_20 | Re-seed CCP VII Lev M & M (5 named feeder tabs, auto_discover=TRUE, no in-tab groups) |
+| 8 | V1_21 | Re-seed CP VII (correct agent: Bank of America, tabs: BB - Onshore / BB - Offshore) |
+| 9 | V1_22 | Re-seed WF Blue Owl (pending sample file; use best-effort from WORKBOOK_WF_BLUE_OWL.md) |
+| 10 | — | Update `pe-sub-platform/src/data/templateProfiles.ts` with all ground-truth fixes |
+| 11 | — | Update `pe-sub-ui/src/screens/BBTemplates/index.tsx` to match prototype registry design |
+| 12 | — | Update `pe-sub-extraction` TemplateDetector to use `detect_keys` + `title_text` from DB |
