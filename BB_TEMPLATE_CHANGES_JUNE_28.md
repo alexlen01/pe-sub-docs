@@ -187,7 +187,7 @@ The templateProfiles.ts has incorrect group headers — must be removed.**
 | Item | Current Doc / profiles.ts | Actual Excel | Fix |
 |------|--------------------------|--------------|-----|
 | Title anchor | "Petershill Partners IV – Borrowing Base" / "Petershill IV … Borrowing Base (Proposed)" | **"Petershill IV and Petershill IV Offshore SCSp – Subscription Facility Borrowing Base"** | Fix detection text |
-| Group 2 header | `"Inlcuded Investors (Non-Rated)"` (typo annotated) | **"Included Investors (Non-Rated)"** — NO TYPO | Fix; remove typo annotation |
+| Group 2 header | `"Included Investors (Non-Rated)"` (typo annotated) | **"Included Investors (Non-Rated)"** — NO TYPO | Fix; remove typo annotation |
 | Skip keywords | Not including "Eligible Commitments" | R81 is a mid-table separator subtotal | Add `Eligible Commitments` to skip_row_keywords |
 | fund field | `fund: 'Petershill IV'` in profiles | Agent bank = Goldman Sachs Bank USA | Fix to `fund: 'Goldman Sachs Bank USA'` |
 
