@@ -2,17 +2,57 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.7.1\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication — stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lps/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base",             "value": "http://localhost:3001", "type": "string", "description": "pe-sub-api host" },
-    { "key": "extractionBase",   "value": "http://localhost:3002", "type": "string", "description": "pe-sub-extraction host" },
-    { "key": "facilityId",       "value": "1",                     "type": "string" },
-    { "key": "lpId",             "value": "1",                     "type": "string" },
-    { "key": "submissionId",     "value": "1",                     "type": "string" },
-    { "key": "aliasId",          "value": "1",                     "type": "string" },
-    { "key": "matchQueueItemId", "value": "1",                     "type": "string" }
+    {
+      "key": "base",
+      "value": "http://localhost:3001",
+      "type": "string",
+      "description": "pe-sub-api host"
+    },
+    {
+      "key": "extractionBase",
+      "value": "http://localhost:3002",
+      "type": "string",
+      "description": "pe-sub-extraction host"
+    },
+    {
+      "key": "facilityId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "lpId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "submissionId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "aliasId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "matchQueueItemId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "authUser",
+      "value": "local.analyst@ubs.dev",
+      "description": "X-Auth-User value for gateway mode."
+    },
+    {
+      "key": "authRoles",
+      "value": "ANALYST",
+      "description": "X-Auth-Roles value for gateway mode (ANALYST and/or ATM; ingest uses SERVICE)."
+    }
   ],
   "item": [
     {
@@ -29,8 +69,12 @@
                 "header": [],
                 "url": {
                   "raw": "{{base}}/health",
-                  "host": ["{{base}}"],
-                  "path": ["health"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
                 },
                 "description": "Returns {\"status\":\"ok\"} when the service is healthy. Served at the host root, outside the /api prefix."
               },
@@ -43,8 +87,13 @@
                 "header": [],
                 "url": {
                   "raw": "{{base}}/api/ping",
-                  "host": ["{{base}}"],
-                  "path": ["api", "ping"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ping"
+                  ]
                 },
                 "description": "Returns {\"status\":\"ok\"}. Same payload as /health but served under the /api prefix."
               },
@@ -59,11 +108,27 @@
               "name": "List all facilities",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/facilities",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities"
+                  ]
                 },
                 "description": "Returns all facilities sorted by name."
               },
@@ -73,11 +138,28 @@
               "name": "Get facility by ID",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/facilities/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "{{facilityId}}"
+                  ]
                 }
               },
               "response": []
@@ -86,16 +168,40 @@
               "name": "Create facility",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"name\": \"BCRED Fund IV\",\n  \"agentBank\": \"Citibank\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/facilities",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities"
+                  ]
                 }
               },
               "response": []
@@ -104,16 +210,42 @@
               "name": "Update facility status",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"status\": \"In Progress\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/facilities/{{facilityId}}/status",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities", "{{facilityId}}", "status"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "{{facilityId}}",
+                    "status"
+                  ]
                 }
               },
               "response": []
@@ -122,16 +254,41 @@
               "name": "Update facility fields",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"name\": \"Blue Owl GP Stakes V\",\n  \"agentBank\": \"JPMorgan\",\n  \"accountNumber\": \"5VX1796\",\n  \"loanAmount\": 2500000000.00,\n  \"maturityDate\": \"2029-03-15\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/facilities/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "Partial update of editable facility fields. name/agentBank are blank-guarded; renaming to an existing name returns 409."
               },
@@ -141,16 +298,42 @@
               "name": "Deactivate facility",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"status\": \"Inactive\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/facilities/{{facilityId}}/status",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities", "{{facilityId}}", "status"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "{{facilityId}}",
+                    "status"
+                  ]
                 },
                 "description": "Set status to Inactive. Returns 409 if the facility still has LP records. Reactivate by patching the status back (e.g. \"Not Started\")."
               },
@@ -160,11 +343,28 @@
               "name": "Delete facility",
               "request": {
                 "method": "DELETE",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/facilities/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "facilities", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "Permanently delete a facility. 204 on success, 404 if absent, 409 if it still has LP records. Cascades to non-LP dependents; audit history is preserved."
               },
@@ -179,11 +379,27 @@
               "name": "List all LPs",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/lps",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps"
+                  ]
                 },
                 "description": "Returns all LPs across all facilities, ordered by investor name."
               },
@@ -193,13 +409,33 @@
               "name": "List LPs by facility",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/lps?facilityId={{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps"
+                  ],
                   "query": [
-                    { "key": "facilityId", "value": "{{facilityId}}", "description": "Filter by facility" }
+                    {
+                      "key": "facilityId",
+                      "value": "{{facilityId}}",
+                      "description": "Filter by facility"
+                    }
                   ]
                 }
               },
@@ -209,14 +445,37 @@
               "name": "List LPs by facility + classification",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/lps?facilityId={{facilityId}}&cls=Rated",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps"
+                  ],
                   "query": [
-                    { "key": "facilityId", "value": "{{facilityId}}" },
-                    { "key": "cls",        "value": "Rated", "description": "Rated | Unrated >2bn | Unrated 1-2bn | Eligible | Excluded" }
+                    {
+                      "key": "facilityId",
+                      "value": "{{facilityId}}"
+                    },
+                    {
+                      "key": "cls",
+                      "value": "Rated",
+                      "description": "Rated | Unrated >2bn | Unrated 1-2bn | Eligible | Excluded"
+                    }
                   ]
                 }
               },
@@ -226,14 +485,37 @@
               "name": "Search LPs",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/lps?facilityId={{facilityId}}&search=blackstone",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps"
+                  ],
                   "query": [
-                    { "key": "facilityId", "value": "{{facilityId}}" },
-                    { "key": "search",     "value": "blackstone", "description": "Case-insensitive name substring search" }
+                    {
+                      "key": "facilityId",
+                      "value": "{{facilityId}}"
+                    },
+                    {
+                      "key": "search",
+                      "value": "blackstone",
+                      "description": "Case-insensitive name substring search"
+                    }
                   ]
                 }
               },
@@ -243,11 +525,28 @@
               "name": "Get LP by ID",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/lps/{{lpId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps", "{{lpId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps",
+                    "{{lpId}}"
+                  ]
                 }
               },
               "response": []
@@ -256,16 +555,41 @@
               "name": "Update LP fields",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"cls\": \"Rated\",\n  \"clsTag\": \"tag-rated\",\n  \"abb\": \"$22.5M\",\n  \"inc\": true,\n  \"rcl\": false,\n  \"notes\": \"Reviewed by credit committee Q2 2026\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/lps/{{lpId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps", "{{lpId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps",
+                    "{{lpId}}"
+                  ]
                 },
                 "description": "Updatable fields: cls, clsTag, abb, inc, rcl, notes. Omit any field to leave it unchanged."
               },
@@ -275,16 +599,41 @@
               "name": "Save classification & rate edits (batch)",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"cls\": \"Rated\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"aum\": \"$310.0B\",\n      \"nav\": \"$180.0B\",\n      \"pension\": \"$300.0B\",\n      \"pensionFunded\": \"112%\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90.0,\n      \"ubsConcLimitPct\": 7.5\n    }\n  ]\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/lps/classification",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps", "classification"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps",
+                    "classification"
+                  ]
                 },
                 "description": "The Shadow BB screen's Save. Rows match persisted records by (facilityId, name); unmatched names are ignored. LP fields (cls, sp, mdy, fitch, aum, nav, pension, pensionFunded, inc, uc) update in place; ubsAdvRatePct/ubsConcLimitPct (percentages) upsert into lp_rates for the period. effectiveDate (YYYY-MM) defaults to current month. Returns { updated }."
               },
@@ -294,16 +643,41 @@
               "name": "Ingest extracted LP records",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "SERVICE",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"extraction\": {\n    \"template\": {\n      \"format\": \"CITIBANK\",\n      \"version\": null,\n      \"headerRowIndex\": 2\n    },\n    \"records\": [\n      {\n        \"rowIndex\": 3,\n        \"investorName\":       { \"value\": \"Blackstone Capital Partners\", \"confidence\": 1.0,  \"sourceHeader\": \"Investor Name\" },\n        \"commitment\":         { \"value\": 50000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Total Commitment\" },\n        \"uncalled\":           { \"value\": 30000000,                       \"confidence\": 0.85, \"sourceHeader\": \"Unfunded Commitment\" },\n        \"aum\":                { \"value\": 120000000000,                   \"confidence\": 1.0,  \"sourceHeader\": \"AUM\" },\n        \"agentRate\":          { \"value\": 0.65,                           \"confidence\": 1.0,  \"sourceHeader\": \"Advance Rate\" },\n        \"concentrationLimit\": { \"value\": 0.10,                           \"confidence\": 0.85, \"sourceHeader\": \"Conc. Limit\" },\n        \"requiresReview\": false,\n        \"warnings\": []\n      }\n    ],\n    \"totalFlagged\": 0\n  }\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/lps/ingest",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps", "ingest"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps",
+                    "ingest"
+                  ]
                 },
                 "description": "Called internally by pe-sub-api after extraction. Each row is matched against the facility's LP records. Actions: Updated (fields written), Queued (credit officer review needed), Skipped (no match)."
               },
@@ -313,13 +687,34 @@
               "name": "List LP rates (as of period)",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/lps/rates?effective_date=2026-05",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps", "rates"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps",
+                    "rates"
+                  ],
                   "query": [
-                    { "key": "effective_date", "value": "2026-05", "description": "Period month (YYYY-MM); most recent rate per LP on or before the last day of this month. Omit to default to today." }
+                    {
+                      "key": "effective_date",
+                      "value": "2026-05",
+                      "description": "Period month (YYYY-MM); most recent rate per LP on or before the last day of this month. Omit to default to today."
+                    }
                   ]
                 },
                 "description": "Returns the most-recent lp_rates row per LP as of the requested period. Used by the Run Shadow BB screen to pre-fill UBS Adv Rate and Conc. Limit. ubsAdvRatePct / ubsConcLimitPct are decimal fractions (0.9 = 90%)."
@@ -330,16 +725,42 @@
               "name": "Batch upsert LP rates",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"effectiveDate\": \"2026-05\",\n  \"rates\": [\n    {\n      \"lpName\": \"CalPERS\",\n      \"classification\": \"Rated\",\n      \"ubsAdvRatePct\": 0.90,\n      \"ubsConcLimitPct\": 0.075,\n      \"source\": \"BATCH_FEED\"\n    }\n  ]\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/lps/rates/batch",
-                  "host": ["{{base}}"],
-                  "path": ["api", "lps", "rates", "batch"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lps",
+                    "rates",
+                    "batch"
+                  ]
                 },
                 "description": "Bulk upsert of lp_rates for one effectiveDate (YYYY-MM). LP lookup is by case-insensitive investor name; unmatched names are skipped. Idempotent. Returns 201 with { saved: <count> }. Rates are decimal fractions 0.0–1.0."
               },
@@ -354,11 +775,29 @@
               "name": "Run shadow BB",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/bb/run/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "bb", "run", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb",
+                    "run",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "Computes and persists a new shadow BB snapshot for the facility. Returns the snapshot with per-LP computed values."
               },
@@ -368,11 +807,29 @@
               "name": "List BB snapshots",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/bb/snapshots/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "bb", "snapshots", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb",
+                    "snapshots",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "All BB snapshots for the facility, in ascending order."
               },
@@ -382,11 +839,30 @@
               "name": "Get latest BB snapshot",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/bb/snapshots/{{facilityId}}/latest",
-                  "host": ["{{base}}"],
-                  "path": ["api", "bb", "snapshots", "{{facilityId}}", "latest"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb",
+                    "snapshots",
+                    "{{facilityId}}",
+                    "latest"
+                  ]
                 }
               },
               "response": []
@@ -395,11 +871,29 @@
               "name": "Get extended BB summary",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/bb/summary-ext/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "bb", "summary-ext", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb",
+                    "summary-ext",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "Extended analytics: LP portfolio stats, BB comparison, BUSA/agent rate breakdown, classification breakdown. Returns zero-valued object when no LPs exist."
               },
@@ -414,11 +908,29 @@
               "name": "Collateral report",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/reports/collateral/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "reports", "collateral", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "collateral",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "Collateral summary derived from the latest BB snapshot."
               },
@@ -428,11 +940,29 @@
               "name": "Concentration report",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/reports/concentration/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "reports", "concentration", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "concentration",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "Concentration breaches derived from the latest BB snapshot."
               },
@@ -442,11 +972,29 @@
               "name": "[PLANNED] EAR report",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/reports/ear/{{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "reports", "ear", "{{facilityId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "ear",
+                    "{{facilityId}}"
+                  ]
                 },
                 "description": "[PLANNED — returns 404] Effective Advance Rate history — array of { calculatedAt, ear, agentEar, earDelta } data points across all BB snapshots."
               },
@@ -461,11 +1009,27 @@
               "name": "List all submissions",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions"
+                  ]
                 },
                 "description": "Returns all submissions ordered newest first. Submissions with status=Processing are filtered out."
               },
@@ -475,13 +1039,32 @@
               "name": "List submissions by facility",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions?facilityId={{facilityId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions"
+                  ],
                   "query": [
-                    { "key": "facilityId", "value": "{{facilityId}}" }
+                    {
+                      "key": "facilityId",
+                      "value": "{{facilityId}}"
+                    }
                   ]
                 }
               },
@@ -491,21 +1074,62 @@
               "name": "Upload agent schedule",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "formdata",
                   "formdata": [
-                    { "key": "facilityId",   "value": "{{facilityId}}", "type": "text" },
-                    { "key": "agentBank",    "value": "Citibank",       "type": "text", "description": "Citibank | JPMorgan | Goldman Sachs | Barclays | Bank of America | Wells Fargo | UBS" },
-                    { "key": "periodMonth",  "value": "2026-05-31",     "type": "text", "description": "YYYY-MM-DD" },
-                    { "key": "file",         "src": "",                 "type": "file", "description": "XLSX, XLS, or CSV (max 50 MB)" },
-                    { "key": "notes",        "value": "",               "type": "text", "description": "Optional analyst notes", "disabled": true }
+                    {
+                      "key": "facilityId",
+                      "value": "{{facilityId}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "agentBank",
+                      "value": "Citibank",
+                      "type": "text",
+                      "description": "Citibank | JPMorgan | Goldman Sachs | Barclays | Bank of America | Wells Fargo | UBS"
+                    },
+                    {
+                      "key": "periodMonth",
+                      "value": "2026-05-31",
+                      "type": "text",
+                      "description": "YYYY-MM-DD"
+                    },
+                    {
+                      "key": "file",
+                      "src": "",
+                      "type": "file",
+                      "description": "XLSX, XLS, or CSV (max 50 MB)"
+                    },
+                    {
+                      "key": "notes",
+                      "value": "",
+                      "type": "text",
+                      "description": "Optional analyst notes",
+                      "disabled": true
+                    }
                   ]
                 },
                 "url": {
                   "raw": "{{base}}/api/submissions",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions"
+                  ]
                 },
                 "description": "Multipart upload. Triggers pe-sub-extraction immediately. Returns 201 with submission metadata (wizardStep=1, status=Processing). Status advances to Review once extraction completes."
               },
@@ -515,11 +1139,28 @@
               "name": "Get submission by ID",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}"
+                  ]
                 }
               },
               "response": []
@@ -528,11 +1169,29 @@
               "name": "Abort submission",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/abort",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "abort"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "abort"
+                  ]
                 },
                 "description": "Deletes the uploaded file, submission_extractions row, and match queue entries. Resets facility status if no other active submissions. Returns 204 No Content on success. Returns 409 if already Processed or already Aborted."
               },
@@ -542,11 +1201,29 @@
               "name": "Confirm extraction",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/confirm",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "confirm"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "confirm"
+                  ]
                 },
                 "description": "Advances submission to wizardStep=4. Auto-learns BB template (sheet name + header row) for the agent bank on first confirmation. (Re)builds match_queue_entries from the extracted LP rows. Returns { templateSaved: boolean, agentBank: string }."
               },
@@ -556,16 +1233,42 @@
               "name": "Save Shadow BB state",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"overrides\": {\n    \"42\": { \"cls\": \"Rated\", \"agentRate\": \"90%\" }\n  }\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/shadow-bb-state",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "shadow-bb-state"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "shadow-bb-state"
+                  ]
                 },
                 "description": "Advances submission to wizardStep=5. Optionally persists per-LP classification/rate overrides (keyed by LP id) in shadow_bb_overrides. Called on 'Commit Decisions' (no overrides) and on 'Save' (with overrides) on the Run Shadow BB screen. Returns updated Submission."
               },
@@ -575,11 +1278,29 @@
               "name": "Complete submission",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/complete",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "complete"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "complete"
+                  ]
                 },
                 "description": "Accepts the Shadow BB run: submission → Processed (wizardStep=6), facility → Active with lastRunAt stamped. Idempotent — calling twice is safe. Returns the updated Submission."
               },
@@ -589,11 +1310,29 @@
               "name": "Get extracted LPs",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/extracted-lps",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "extracted-lps"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "extracted-lps"
+                  ]
                 },
                 "description": "Returns the extracted_lps JSONB from submission_extractions — array of formatted LP rows with per-row confidence scores and computed agentBBFmt/pctBBFmt fields."
               },
@@ -603,11 +1342,29 @@
               "name": "Get field map",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/field-map",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "field-map"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "field-map"
+                  ]
                 },
                 "description": "Returns an array of { extracted, canonical, group, note, tier } entries — one per recognised column. Used to render the column mapping review table."
               },
@@ -617,11 +1374,29 @@
               "name": "Get doc recognition",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/doc-recognition",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "doc-recognition"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "doc-recognition"
+                  ]
                 },
                 "description": "Returns: { document, format, tablesIdentified, tableLocation, headerRow, totalRows, mappedColumns, unmatchedColumns, headerInfo }."
               },
@@ -631,11 +1406,29 @@
               "name": "Get unrecognized columns",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/unrecognized-columns",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "unrecognized-columns"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "unrecognized-columns"
+                  ]
                 },
                 "description": "Returns column headers from the uploaded document that could not be matched to any canonical LP field."
               },
@@ -645,16 +1438,42 @@
               "name": "Remap column",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"extractedHeader\": \"Unfunded Commitment\",\n  \"canonical\": \"UNCALLED\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/remap",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "remap"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "remap"
+                  ]
                 },
                 "description": "Saves a User-tier alias (extractedHeader → canonical) then immediately re-extracts. Returns 200 OK on success. Returns 502 if alias saved but pe-sub-extraction is unreachable — retry with POST /reextract."
               },
@@ -664,11 +1483,29 @@
               "name": "Re-extract",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/submissions/{{submissionId}}/reextract",
-                  "host": ["{{base}}"],
-                  "path": ["api", "submissions", "{{submissionId}}", "reextract"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "reextract"
+                  ]
                 },
                 "description": "Re-runs the full extraction pipeline using the stored file plus any saved column remappings and BB template hints for the agent bank. Returns 204 No Content on success. Returns 502 if pe-sub-extraction is unreachable."
               },
@@ -683,11 +1520,28 @@
               "name": "Get alias groups",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/field-mapping/alias-groups",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "alias-groups"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "alias-groups"
+                  ]
                 },
                 "description": "Canonical fields with their aliases, grouped by LP Master section."
               },
@@ -697,11 +1551,28 @@
               "name": "Get canonical fields",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/field-mapping/canonical-fields",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "canonical-fields"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "canonical-fields"
+                  ]
                 },
                 "description": "Flat list of canonical fields (value, label, extractable). Used to populate mapping dropdowns."
               },
@@ -711,11 +1582,28 @@
               "name": "Get blocklist",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/field-mapping/blocklist",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "blocklist"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "blocklist"
+                  ]
                 },
                 "description": "Qualifier blocklist — terms that disqualify a column header from matching."
               },
@@ -725,11 +1613,28 @@
               "name": "Get mapping suggestions",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/field-mapping/suggestions",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "suggestions"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "suggestions"
+                  ]
                 }
               },
               "response": []
@@ -738,16 +1643,41 @@
               "name": "Submit mapping suggestion",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"extractedHeader\": \"Fund Manager\",\n  \"canonicalField\": \"investor_name\",\n  \"suggestedBy\": \"J. Smith\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/field-mapping/suggestions",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "suggestions"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "suggestions"
+                  ]
                 }
               },
               "response": []
@@ -756,16 +1686,41 @@
               "name": "Add alias",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"canonicalFieldId\": 1,\n  \"text\": \"Fund Manager\",\n  \"tier\": \"Bank\",\n  \"bank\": \"Citibank\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/field-mapping/aliases",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "aliases"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "aliases"
+                  ]
                 },
                 "description": "tier: Core | Bank | User. Returns 409 Conflict if the alias text is already mapped to another canonical field."
               },
@@ -775,16 +1730,42 @@
               "name": "Update alias",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"text\": \"Fund Manager Name\",\n  \"bank\": \"Citibank\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/field-mapping/aliases/{{aliasId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "aliases", "{{aliasId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "aliases",
+                    "{{aliasId}}"
+                  ]
                 },
                 "description": "Returns 409 Conflict if the new text is already mapped to another canonical field."
               },
@@ -794,11 +1775,29 @@
               "name": "Delete alias",
               "request": {
                 "method": "DELETE",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/field-mapping/aliases/{{aliasId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "field-mapping", "aliases", "{{aliasId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "field-mapping",
+                    "aliases",
+                    "{{aliasId}}"
+                  ]
                 }
               },
               "response": []
@@ -812,16 +1811,41 @@
               "name": "Test LP name match",
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"name\": \"Blackstone Capital Partners\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/matching/test",
-                  "host": ["{{base}}"],
-                  "path": ["api", "matching", "test"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "matching",
+                    "test"
+                  ]
                 },
                 "description": "Runs fuzzy LP name matching (Jaro-Winkler + Levenshtein) against all LP names. Returns { input, normalised, matches: [{ name, score, action }] } where action is Accept | Queue | Reject."
               },
@@ -831,13 +1855,34 @@
               "name": "List match queue",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/matching/queue?submissionId={{submissionId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "matching", "queue"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "matching",
+                    "queue"
+                  ],
                   "query": [
-                    { "key": "submissionId", "value": "{{submissionId}}", "description": "Optional: filter by submission. Omit to return all queue entries." }
+                    {
+                      "key": "submissionId",
+                      "value": "{{submissionId}}",
+                      "description": "Optional: filter by submission. Omit to return all queue entries."
+                    }
                   ]
                 },
                 "description": "Returns match_queue_entries for the given submission — one row per extracted LP queued for credit officer review."
@@ -848,16 +1893,42 @@
               "name": "Resolve queue item",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"decision\": \"accepted\"\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/matching/queue/{{matchQueueItemId}}",
-                  "host": ["{{base}}"],
-                  "path": ["api", "matching", "queue", "{{matchQueueItemId}}"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "matching",
+                    "queue",
+                    "{{matchQueueItemId}}"
+                  ]
                 },
                 "description": "decision: accepted | rejected | manual (case-insensitive; stored capitalised). When masterName is provided and non-blank, the override is set and decision is forced to Accepted."
               },
@@ -867,11 +1938,28 @@
               "name": "[PLANNED] Get matching thresholds",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/matching/thresholds",
-                  "host": ["{{base}}"],
-                  "path": ["api", "matching", "thresholds"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "matching",
+                    "thresholds"
+                  ]
                 },
                 "description": "[PLANNED] Use GET /api/config/matching instead — thresholds are stored under matching_config."
               },
@@ -881,16 +1969,41 @@
               "name": "[PLANNED] Update matching thresholds",
               "request": {
                 "method": "PATCH",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"autoAccept\": 90,\n  \"reviewQueue\": 70\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/matching/thresholds",
-                  "host": ["{{base}}"],
-                  "path": ["api", "matching", "thresholds"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "matching",
+                    "thresholds"
+                  ]
                 },
                 "description": "[PLANNED] Use PUT /api/config/matching instead."
               },
@@ -905,11 +2018,28 @@
               "name": "Get eligibility config",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/config/eligibility",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "eligibility"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "eligibility"
+                  ]
                 },
                 "description": "Returns all 6 eligibility config keys assembled from the DB cache. Response keys are SCREAMING_SNAKE_CASE: BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS. Returns 404 if no keys seeded."
               },
@@ -919,18 +2049,47 @@
               "name": "Update eligibility config section",
               "request": {
                 "method": "PUT",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "[\n  { \"cls\": \"Rated\",          \"rate\": 90 },\n  { \"cls\": \"Unrated >2bn\",   \"rate\": 85 },\n  { \"cls\": \"Unrated 1-2bn\", \"rate\": 80 },\n  { \"cls\": \"Eligible\",      \"rate\": 75 }\n]",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/config/eligibility?section=busa_tiers",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "eligibility"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "eligibility"
+                  ],
                   "query": [
-                    { "key": "section", "value": "busa_tiers", "description": "Required. Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | global_settings" }
+                    {
+                      "key": "section",
+                      "value": "busa_tiers",
+                      "description": "Required. Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | global_settings"
+                    }
                   ]
                 },
                 "description": "Upserts a single config key. The ?section= param appears in the audit log detail. Body is the new JSON value for the key."
@@ -941,11 +2100,28 @@
               "name": "Get matching config",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/config/matching",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "matching"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "matching"
+                  ]
                 },
                 "description": "Returns matching_config from DB cache: defaultThresholds (autoAccept, reviewQueue), legalSuffixes, knownAbbreviations, abbrevRegexMap. Returns 404 if not seeded."
               },
@@ -955,18 +2131,47 @@
               "name": "Update matching config",
               "request": {
                 "method": "PUT",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"defaultThresholds\": {\n    \"autoAccept\": 90,\n    \"reviewQueue\": 70\n  }\n}",
-                  "options": { "raw": { "language": "json" } }
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 },
                 "url": {
                   "raw": "{{base}}/api/config/matching?section=thresholds",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "matching"],
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "matching"
+                  ],
                   "query": [
-                    { "key": "section", "value": "thresholds", "description": "Optional label for audit log: thresholds | weights | suffixes | abbreviations" }
+                    {
+                      "key": "section",
+                      "value": "thresholds",
+                      "description": "Optional label for audit log: thresholds | weights | suffixes | abbreviations"
+                    }
                   ]
                 },
                 "description": "Replaces the full matching_config value. The ?section= param is used only in the audit log detail. Writes a 'Match Config Change' audit event."
@@ -977,11 +2182,28 @@
               "name": "Get wizard config",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/config/wizard",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "wizard"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "wizard"
+                  ]
                 },
                 "description": "Returns the wizard_config JSON from the DB cache. Returns 404 until the wizard_config row is seeded — the UI falls back to its local wizardConfig.ts constants."
               },
@@ -991,11 +2213,28 @@
               "name": "Get audit config",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/config/audit",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "audit"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "audit"
+                  ]
                 },
                 "description": "Returns the audit_config JSON from the DB cache. Returns 404 until the audit_config row is seeded — the UI falls back to its local auditConfig.ts constants."
               },
@@ -1005,11 +2244,28 @@
               "name": "Get reports config",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/config/reports",
-                  "host": ["{{base}}"],
-                  "path": ["api", "config", "reports"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "reports"
+                  ]
                 },
                 "description": "Returns the report_config JSON from the DB cache. Returns 404 until the report_config row is seeded — the UI falls back to its local reportConfig.ts constants."
               },
@@ -1024,11 +2280,27 @@
               "name": "List audit log",
               "request": {
                 "method": "GET",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/audit",
-                  "host": ["{{base}}"],
-                  "path": ["api", "audit"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "audit"
+                  ]
                 },
                 "description": "Returns all audit rows ordered newest first. Each row: { ts, event, detail, facility, user, ip }."
               },
@@ -1038,11 +2310,28 @@
               "name": "Record login event",
               "request": {
                 "method": "POST",
-                "header": [],
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/audit/login",
-                  "host": ["{{base}}"],
-                  "path": ["api", "audit", "login"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "audit",
+                    "login"
+                  ]
                 },
                 "description": "No request body needed. Writes a Login audit event with the client IP. User is hardcoded to 'J. Smith' pending auth integration."
               },
@@ -1057,11 +2346,22 @@
               "name": "SSE event stream",
               "request": {
                 "method": "GET",
-                "header": [{ "key": "Accept", "value": "text/event-stream" }],
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
                 "url": {
                   "raw": "{{base}}/api/notifications/events",
-                  "host": ["{{base}}"],
-                  "path": ["api", "notifications", "events"]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "notifications",
+                    "events"
+                  ]
                 },
                 "description": "Server-Sent Events stream. Broadcasts facility status changes, BB runs, LP reclassifications, and upload events in real time. Keep the connection open; events arrive as 'data: ...' lines. Note: Postman supports SSE via the 'Send' button."
               },
@@ -1082,8 +2382,12 @@
             "header": [],
             "url": {
               "raw": "{{extractionBase}}/health",
-              "host": ["{{extractionBase}}"],
-              "path": ["health"]
+              "host": [
+                "{{extractionBase}}"
+              ],
+              "path": [
+                "health"
+              ]
             },
             "description": "Returns {\"status\":\"UP\"} when the extraction service is healthy. Served at the host root, outside the /api prefix."
           },
@@ -1097,19 +2401,64 @@
             "body": {
               "mode": "formdata",
               "formdata": [
-                { "key": "facilityId",    "value": "{{facilityId}}", "type": "text",  "description": "Target facility ID (used when forwarding to pe-sub-api)" },
-                { "key": "file",          "src": "",                 "type": "file",  "description": "XLSX, XLS, or CSV agent schedule (max 50 MB)" },
-                { "key": "forward",       "value": "false",          "type": "text",  "description": "Set true to forward result to pe-sub-api/lps/ingest", "disabled": true },
-                { "key": "aliasConfig",   "value": "",               "type": "text",  "description": "JSON alias map from FM Dictionary — overrides built-in aliases when provided", "disabled": true },
-                { "key": "sheetNameHint", "value": "",               "type": "text",  "description": "Preferred sheet name; bypasses sheet heuristic when provided", "disabled": true },
-                { "key": "headerRowHint", "value": "",               "type": "text",  "description": "Known header row index; bypasses header detection when provided", "disabled": true },
-                { "key": "classificationConfig", "value": "",        "type": "text",  "description": "JSON { \"header text\": \"Agent LP Classification\" } map for templates that group LPs into classification section rows", "disabled": true }
+                {
+                  "key": "facilityId",
+                  "value": "{{facilityId}}",
+                  "type": "text",
+                  "description": "Target facility ID (used when forwarding to pe-sub-api)"
+                },
+                {
+                  "key": "file",
+                  "src": "",
+                  "type": "file",
+                  "description": "XLSX, XLS, or CSV agent schedule (max 50 MB)"
+                },
+                {
+                  "key": "forward",
+                  "value": "false",
+                  "type": "text",
+                  "description": "Set true to forward result to pe-sub-api/lps/ingest",
+                  "disabled": true
+                },
+                {
+                  "key": "aliasConfig",
+                  "value": "",
+                  "type": "text",
+                  "description": "JSON alias map from FM Dictionary — overrides built-in aliases when provided",
+                  "disabled": true
+                },
+                {
+                  "key": "sheetNameHint",
+                  "value": "",
+                  "type": "text",
+                  "description": "Preferred sheet name; bypasses sheet heuristic when provided",
+                  "disabled": true
+                },
+                {
+                  "key": "headerRowHint",
+                  "value": "",
+                  "type": "text",
+                  "description": "Known header row index; bypasses header detection when provided",
+                  "disabled": true
+                },
+                {
+                  "key": "classificationConfig",
+                  "value": "",
+                  "type": "text",
+                  "description": "JSON { \"header text\": \"Agent LP Classification\" } map for templates that group LPs into classification section rows",
+                  "disabled": true
+                }
               ]
             },
             "url": {
               "raw": "{{extractionBase}}/api/extract",
-              "host": ["{{extractionBase}}"],
-              "path": ["api", "extract"]
+              "host": [
+                "{{extractionBase}}"
+              ],
+              "path": [
+                "api",
+                "extract"
+              ]
             },
             "description": "Parses the uploaded agent schedule, detects bank template and header row, extracts LP records with per-field confidence scores. forward=false by default in this test request — pe-sub-api is not notified."
           },
@@ -1128,8 +2477,14 @@
             "header": [],
             "url": {
               "raw": "{{base}}/api/config/classification",
-              "host": ["{{base}}"],
-              "path": ["api", "config", "classification"]
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "config",
+                "classification"
+              ]
             }
           },
           "response": []
@@ -1141,8 +2496,15 @@
             "header": [],
             "url": {
               "raw": "{{base}}/api/reports/ear/{{facilityId}}",
-              "host": ["{{base}}"],
-              "path": ["api", "reports", "ear", "{{facilityId}}"]
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "ear",
+                "{{facilityId}}"
+              ]
             }
           },
           "response": []

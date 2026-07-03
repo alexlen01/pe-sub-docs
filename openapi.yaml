@@ -19,13 +19,25 @@ info:
     - Routes with no tag note are **implemented** in `pe-sub-api`.
     - Routes marked `[planned]` are not yet implemented; the UI falls back to
       static mock data when they return non-2xx.
-  version: 0.7.1
+
+    **Authentication** — stateless, header-based. In `gateway` mode (production, behind UBS SSO)
+    every request must carry `X-Auth-User` and `X-Auth-Roles`; a missing user header returns `401`.
+    In `dev` mode (default local) a fixed dev identity is injected so no headers are required.
+    Roles: `ANALYST`, `ATM`, `SERVICE`. `POST /lps/ingest` requires `SERVICE`; configuration and
+    field-mapping mutations require `ANALYST` — an insufficient role returns `403`. Public routes
+    (`/ping`, `/health`, `/notifications/**`) need no identity.
+  version: 0.8.0
   contact:
     name: PE Sub Platform Team
 
 servers:
   - url: http://localhost:3001/api
     description: Development (Vite proxy forwards /api → localhost:3001)
+
+# Applies in gateway mode. In dev mode the dev identity is injected and these headers are optional.
+security:
+  - GatewayUser: []
+    GatewayRoles: []
 
 tags:
   - name: facilities
@@ -1447,6 +1459,22 @@ paths:
 # ─────────────────────────────────────────────────────────────────────────────
 
 components:
+
+  # ── Security schemes ─────────────────────────────────────────────────────────
+  # Gateway mode: the SSO reverse proxy injects the caller's identity and roles as headers.
+  # Dev mode injects a fixed identity server-side, so these are not required locally.
+
+  securitySchemes:
+    GatewayUser:
+      type: apiKey
+      in: header
+      name: X-Auth-User
+      description: Authenticated user id/email, injected by the SSO reverse proxy (gateway mode).
+    GatewayRoles:
+      type: apiKey
+      in: header
+      name: X-Auth-Roles
+      description: Comma-separated roles, e.g. "ANALYST,ATM" (gateway mode).
 
   # ── Parameters ───────────────────────────────────────────────────────────────
 

@@ -8,6 +8,29 @@ This document maps what the current React prototype covers against what a produc
 
 ---
 
+## ⚠️ As-Built Status (July 2026) — read this first
+
+Much of the "Production Gap" column below has since been **built**. The live system is no longer the
+May-2026 `pe-sub-platform` prototype; it is three deployed services. Where this document and the
+implementation disagree, the implementation is authoritative. Corrections to the baseline:
+
+| This doc says (April/May 2026) | As-built (July 2026) |
+|---|---|
+| Frontend: React 18 **+ Redux** | `pe-sub-ui` — React 18 + TypeScript + **Context API** (no Redux); Vite **5**. `pe-sub-platform` is a dead JSX prototype. |
+| Spring Boot **3.4.x** | Spring Boot **3.5**, Java 21, virtual threads enabled on both services. |
+| Shadow BB results "not persisted between sessions" | Persisted as `bb_snapshots` (JSONB `result`); the run is a single atomic transaction (`ShadowBbService`). |
+| LP Master / submissions / audit are static arrays | Real PostgreSQL tables with Flyway migrations; file upload → async extraction pipeline. |
+| Document parsing "simulated" | `pe-sub-extraction` parses real XLSX/CSV via Apache POI; template registry + field-mapping dictionary drive recognition. |
+| AUM stored as string labels only | LP money now dual-stored: display string **+ precise numeric columns** (`*_num` on `lp_records`); the BB engine computes from exact dollars. |
+| Auth not modelled | Header/token security with `dev` / `gateway` modes; ANALYST/ATM/SERVICE roles; audit trail records the authenticated principal. Gateway (SSO) enforcement is one config flag. |
+
+**Still open** (genuine gaps, not yet built): immutable/tamper-evident audit store with 7-year
+retention; 4-eye approval workflow (submission completion); AUM text-range normalization queue;
+pagination on large collection reads; horizontal-scale SSE (currently in-process). See
+`OPEN_QUESTIONS.md`.
+
+---
+
 ## Proposal Baseline (for reference)
 
 | Dimension | Value |
