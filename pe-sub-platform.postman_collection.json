@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication — stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lps/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0 and pe-sub-docs/openapi-extraction.yaml v0.1.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication — stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lps/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -617,7 +617,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"cls\": \"Rated\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"aum\": \"$310.0B\",\n      \"nav\": \"$180.0B\",\n      \"pension\": \"$300.0B\",\n      \"pensionFunded\": \"112%\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90.0,\n      \"ubsConcLimitPct\": 7.5\n    }\n  ]\n}",
+                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"audit\": true,\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"originalName\": \"CalPERS\",\n      \"parent\": \"California Public Employees Retirement System\",\n      \"spv\": false,\n      \"investorType\": \"Pension Fund\",\n      \"instVsHnw\": \"Institutional\",\n      \"region\": \"North America\",\n      \"agentCls\": \"Rated Included\",\n      \"cls\": \"Rated Investor\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"aum\": \"$310.0B\",\n      \"nav\": \"$180.0B\",\n      \"pension\": \"$300.0B\",\n      \"pensionFunded\": \"112%\",\n      \"capCommit\": \"$50.0M\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90,\n      \"agentRatePct\": 65,\n      \"ubsConcLimitPct\": 7.5,\n      \"agentConcLimitPct\": 10,\n      \"notes\": \"Reviewed by credit committee Q2 2026\"\n    },\n    {\n      \"name\": \"Unclassified Investor LP\",\n      \"cls\": \"\",\n      \"inc\": false,\n      \"notes\": \"Classification pending\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -635,7 +635,7 @@
                     "classification"
                   ]
                 },
-                "description": "The Shadow BB screen's Save. Rows match persisted records by (facilityId, name); unmatched names are ignored. LP fields (cls, sp, mdy, fitch, aum, nav, pension, pensionFunded, inc, uc) update in place; ubsAdvRatePct/ubsConcLimitPct (percentages) upsert into lp_rates for the period. effectiveDate (YYYY-MM) defaults to current month. Returns { updated }."
+                "description": "The Shadow BB screen autosave/final save. Rows match persisted records by (facilityId, originalName || name); unmatched names are ignored. Present LP fields update in place. Blank cls is preserved as Unclassified rather than defaulting to Eligible. Rate and concentration fields are percentages; UBS rate/limit upsert into lp_rates for effectiveDate. audit=true writes one aggregate audit entry; false/null is silent autosave. Returns { updated }."
               },
               "response": []
             },
@@ -969,7 +969,7 @@
               "response": []
             },
             {
-              "name": "[PLANNED] EAR report",
+              "name": "EAR report",
               "request": {
                 "method": "GET",
                 "header": [
@@ -996,7 +996,7 @@
                     "{{facilityId}}"
                   ]
                 },
-                "description": "[PLANNED — returns 404] Effective Advance Rate history — array of { calculatedAt, ear, agentEar, earDelta } data points across all BB snapshots."
+                "description": "Effective Advance Rate history from BB snapshots: array of { calculatedAt, ear, agentEar, earDelta } data points."
               },
               "response": []
             }
@@ -2015,6 +2015,37 @@
           "name": "Configuration",
           "item": [
             {
+              "name": "Get classification config",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/config/classification",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "classification"
+                  ]
+                },
+                "description": "Returns classification_config from DB cache: UBS_CLS_OPTS, UBS_CLS_DEFAULT_RATE, AGENT_RATE_UBS_TIERS, AGENT_CLS_UBS_MAP, rating/region/type options, criteria, and label maps. Returns 404 if not seeded."
+              },
+              "response": []
+            },
+            {
               "name": "Get eligibility config",
               "request": {
                 "method": "GET",
@@ -2394,6 +2425,43 @@
           "response": []
         },
         {
+          "name": "Inspect workbook signals",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "src": "",
+                  "type": "file",
+                  "description": "XLSX, XLS, or CSV agent schedule"
+                },
+                {
+                  "key": "rows",
+                  "value": "15",
+                  "type": "text",
+                  "description": "Number of leading rows to return per sheet",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{extractionBase}}/api/inspect",
+              "host": [
+                "{{extractionBase}}"
+              ],
+              "path": [
+                "api",
+                "inspect"
+              ]
+            },
+            "description": "Returns workbook structural signals (sheet names and leading rows) used by pe-sub-api template recognition. Does not extract LP records."
+          },
+          "response": []
+        },
+        {
           "name": "Extract LP records from file",
           "request": {
             "method": "POST",
@@ -2447,6 +2515,48 @@
                   "type": "text",
                   "description": "JSON { \"header text\": \"Agent LP Classification\" } map for templates that group LPs into classification section rows",
                   "disabled": true
+                },
+                {
+                  "key": "headerRowSpan",
+                  "value": "",
+                  "type": "text",
+                  "description": "Number of physical rows occupied by stacked headers",
+                  "disabled": true
+                },
+                {
+                  "key": "agentBank",
+                  "value": "",
+                  "type": "text",
+                  "description": "Agent bank name for bank-specific parsing/mapping",
+                  "disabled": true
+                },
+                {
+                  "key": "forceTemplate",
+                  "value": "",
+                  "type": "text",
+                  "description": "Optional template override name for re-extraction/testing",
+                  "disabled": true
+                },
+                {
+                  "key": "sheetNames",
+                  "value": "",
+                  "type": "text",
+                  "description": "Repeat this multipart key for each exact LP-grid sheet in a multi-tab template",
+                  "disabled": true
+                },
+                {
+                  "key": "autoDiscoverTabs",
+                  "value": "false",
+                  "type": "text",
+                  "description": "Set true to scan all sheets for LP-grid tabs",
+                  "disabled": true
+                },
+                {
+                  "key": "skipRowKeywords",
+                  "value": "",
+                  "type": "text",
+                  "description": "Repeat this multipart key for first-cell row keywords to drop before LP parsing",
+                  "disabled": true
                 }
               ]
             },
@@ -2460,52 +2570,7 @@
                 "extract"
               ]
             },
-            "description": "Parses the uploaded agent schedule, detects bank template and header row, extracts LP records with per-field confidence scores. forward=false by default in this test request — pe-sub-api is not notified."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Planned — Not Yet Implemented",
-      "description": "Endpoints not yet implemented. Requests will return 404 until live. Sync source: pe-sub-docs/openapi.yaml v0.7.1.",
-      "item": [
-        {
-          "name": "[PLANNED] Config — classification",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/config/classification",
-              "host": [
-                "{{base}}"
-              ],
-              "path": [
-                "api",
-                "config",
-                "classification"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "[PLANNED] Reports — EAR",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/reports/ear/{{facilityId}}",
-              "host": [
-                "{{base}}"
-              ],
-              "path": [
-                "api",
-                "reports",
-                "ear",
-                "{{facilityId}}"
-              ]
-            }
+            "description": "Parses the uploaded agent schedule using optional deterministic hints from pe-sub-api recognition: sheet/header, stacked header span, LP-category group map, multi-tab sheet names or auto-discovery, and skip-row keywords. forward=false by default in this test request; pe-sub-api is not notified."
           },
           "response": []
         }

@@ -1,7 +1,8 @@
 # PE Subscription Borrowing Base — Prototype Process Flow
 
 This document describes the process as implemented in the current React prototype (`pe-sub-platform`).  
-It is updated continuously as new features are added.  
+It is updated continuously as new features are added. Where the live platform (`pe-sub-ui` +
+`pe-sub-api`) has since implemented or extended a step, the section notes the live behaviour.  
 For the confirmed as-is manual process, see `BB_PROCESS_FLOW.md`.
 
 ---
@@ -101,19 +102,27 @@ Summary KPIs displayed after calculation completes:
 - Concentration Excess (total)
 
 **5e — Concentration Breach & Warning Alerts**  
-Four concentration rules are checked after each calculation:
+Four concentration rules are checked after each calculation. In the live platform the
+thresholds are **not fixed**: the engine (`pe-sub-api`) reads them from the **Concentration
+Limits** card on the Configuration screen (config key `conc_limits`, matched by row label) on
+every Shadow BB run, and persists the verdict with the snapshot. The seeded defaults:
 
-| Rule | Threshold | Status |
-|---|---|---|
-| Single LP Concentration | > 15% of Total UBS BB | Breach |
-| Top-10 LP Concentration | > 60% of Total UBS BB | Breach |
-| Top-10 LP Concentration | 50–60% of Total UBS BB | Warning |
-| Unrated Aggregate Concentration | > 50% of Total UBS BB | Breach |
-| Non-US LP Concentration | > 30% of Total UBS BB | Breach |
+| Rule | Config row | Default threshold | Status |
+|---|---|---|---|
+| Single LP Concentration | Single LP max | > 15% of Total UBS BB | Breach |
+| Top-10 LP Concentration | Top-10 LP max | > 60% of Total UBS BB | Breach |
+| Top-10 LP Concentration | 10 pp below the Top-10 limit | 50–60% of Total UBS BB | Warning |
+| Unrated Aggregate Concentration | Unrated max (aggregate) | > 50% of Total UBS BB | Breach |
+| Non-US LP Concentration | Non-US LP max | > 30% of Total UBS BB | Breach |
 
-Breaches appear in a red alert box with a **Review in BB Results →** button.  
-Warnings appear in an amber alert box with a **View in BB Results →** button.  
-When breaches are detected, the primary action button relabels to **Review Breaches in BB Results**.
+A missing config row (or key) falls back to its seeded default, so detection never silently
+switches off. A fifth config row — **Pension fund max** (basis: Total eligible uncalled) —
+exists in `conc_limits` but has no engine rule yet; it is display-only.
+
+Breaches appear in a red alert box under Calculation Results ("must resolve before submitting
+BB certificate to agent"). Warnings appear in an amber alert box ("approaching limit, monitor
+closely"). When breaches are detected, the primary action button relabels to
+**Review Breaches in BB Results**.
 
 ---
 
@@ -134,14 +143,17 @@ Full LP-level Shadow BB table showing all 14 computed fields per LP:
 
 Clicking a row opens a detail modal with Identity, Ratings, LP Capital, and UBS BB Calculation sections.
 
-Concentration breach table is shown above the LP table when breaches exist.
+The concentration breach table is shown above the LP table when the latest snapshot carries
+breaches: collapsible red (breach) and amber (warning) panels listing Rule, Detail, Current,
+and Limit, sourced from the verdict persisted with the snapshot. The panels hide while local
+overrides are active, since the stored verdict no longer matches the recomputed table below.
 
 **Controls:**
 - Facility and Snapshot selectors
 - Recalculate button (re-runs computation for selected facility)
 - Stale warning banner when facility has changed since last run
 - Classification filter
-- Export Certificate (CSV download: summary + LP-level detail)
+- Export (summary + LP-level detail; Excel/XLSX in the live platform, CSV in the prototype)
 
 ---
 
@@ -161,7 +173,11 @@ Configuration screen for name-matching algorithm thresholds (auto-accept ≥ 95,
 
 ### Configuration
 
-Facility-level parameters: advance rate schedule, concentration limit per LP ($M), eligibility rules. State is in-memory (lost on refresh in the prototype).
+Facility-level parameters: advance rate schedules, eligibility rules, concentration limits, and
+global settings. In the live platform these persist in the `config` table (`pe-sub-api`) and are
+edited on the Configuration screen; the **Concentration Limits** card (`conc_limits`) directly
+drives breach detection on every Shadow BB run (see 5e). In the prototype this state was
+in-memory and lost on refresh.
 
 ### Audit Trail
 
@@ -169,7 +185,23 @@ Append-only log of all system events (ingestion, extraction, matching, calculati
 
 ### Reports
 
-Placeholder for scheduled and ad-hoc reports (not yet implemented beyond the Shadow BB CSV export).
+Fully implemented in the live platform — six tabs, all reading persisted data via
+`/api/reports/*` (no client-side recomputation):
+
+- **Collateral & Coverage** — BB certificate built from the selected facility's snapshot
+  (latest, or an earlier one via the snapshot selector): summary figures plus per-LP-category
+  breakdown, with watermark/detail options and export
+- **Effective Advance Rates** — EAR trend, one point per persisted snapshot
+- **Agent Bank Exposure** — UBS vs Agent BB aggregated by agent bank across every facility's
+  latest snapshot
+- **Concentration Exposures** — the breach verdict persisted with each facility's latest
+  snapshot (see 5e), filterable by concentration test
+- **Ad Hoc Reporting** — LP-level query by facility / LP category / sort, exportable to XLSX
+- **Scheduled Reports** — system-managed batch jobs listed from `report_config`
+  (display-only; no user configuration)
+
+Generated reports are recorded in report history (`POST /api/reports/history`; the 50 most
+recent entries are shown).
 
 ---
 
@@ -181,8 +213,8 @@ Placeholder for scheduled and ad-hoc reports (not yet implemented beyond the Sha
 | LP classified manually in Excel, one by one | LP Classification & Rate Assignment table (Step 5b) — LP Master defaults pre-populate; Analyst reviews and overrides before running |
 | BUSA rate entered manually per LP | Auto-derived from classification in real time; Analyst can override classification to change rate |
 | Concentration limits entered manually per LP | Per-LP CL editable in Step 5b table; defaults to facility-level parameter ($25M) |
-| BB calculated in Excel | Client-side calculation engine (`bbCalculationService.js`) runs on demand |
-| Results in shared-folder Excel files | In-memory results displayed in ShadowBB screen; exportable as CSV |
-| No breach detection | Four concentration rules checked automatically; breach/warning alerts with navigation to resolution |
+| BB calculated in Excel | Calculation engine runs on demand — server-side in `pe-sub-api` (`BbCalculationService`), which persists each run as a snapshot; the UI keeps a mirrored TS engine (`bbCalculationService.ts`) for live preview |
+| Results in shared-folder Excel files | Persisted BB snapshots (PostgreSQL) displayed on the Shadow BB Results screen; exportable to Excel |
+| No breach detection | Four concentration rules checked automatically on every run against the configurable Concentration Limits (Config screen); breach/warning alerts at run time and on the Shadow BB Results screen |
 | LP name matching done manually | Automated name-matching with confidence scoring; Analyst reviews only borderline cases |
-| No LP Master system of record | LP Master register maintained in prototype (static seed; production will use persistent DB) |
+| No LP Master system of record | LP Master register — static seed in the prototype; persistent PostgreSQL store in the live platform (`pe-sub-api`) |

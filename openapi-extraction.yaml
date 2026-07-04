@@ -55,6 +55,43 @@ paths:
                     type: string
                     example: UP
 
+  /api/inspect:
+    post:
+      tags: [extraction]
+      summary: Inspect workbook structure for template recognition
+      description: >
+        Returns raw workbook signals (sheet names and the first N rows per sheet) so
+        `pe-sub-api` can recognise the workbook against the `bb_templates` registry before
+        requesting deterministic extraction. This endpoint does not extract LP records.
+      operationId: inspectWorkbook
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: XLSX, XLS, or CSV agent schedule
+                rows:
+                  type: integer
+                  default: 15
+                  description: Number of leading rows to return per sheet
+      responses:
+        '200':
+          description: Workbook structural signals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkbookSignals'
+        '400':
+          description: Malformed request
+        '500':
+          description: Inspection failure
+
   /api/extract:
     post:
       tags: [extraction]
@@ -100,12 +137,33 @@ paths:
                 headerRowHint:
                   type: integer
                   description: Known zero-based header row index; bypasses header detection when provided.
+                headerRowSpan:
+                  type: integer
+                  description: Number of physical rows occupied by a stacked column header.
                 classificationConfig:
                   type: string
                   description: >
                     JSON `{ "header text": "Agent LP Classification" }` map for templates that group
                     LPs into classification section rows; merged on top of the standard classification
                     values, which are always recognised.
+                agentBank:
+                  type: string
+                  description: Agent bank name supplied by pe-sub-api for bank-specific parsing/mapping.
+                forceTemplate:
+                  type: string
+                  description: Optional template override name used by manual re-extraction/testing.
+                sheetNames:
+                  type: array
+                  items: { type: string }
+                  description: Repeated multipart field naming the exact LP-grid sheets to parse for multi-tab templates.
+                autoDiscoverTabs:
+                  type: boolean
+                  default: false
+                  description: When true, scan all workbook sheets for LP-grid tabs instead of using explicit sheet names.
+                skipRowKeywords:
+                  type: array
+                  items: { type: string }
+                  description: Repeated multipart field of first-cell keywords whose rows should be dropped before LP parsing.
       responses:
         '200':
           description: Structured extraction result
@@ -124,6 +182,30 @@ paths:
 
 components:
   schemas:
+
+    WorkbookSignals:
+      type: object
+      description: Raw workbook preview used by pe-sub-api template recognition.
+      properties:
+        fileName:
+          type: string
+        sheets:
+          type: array
+          items:
+            $ref: '#/components/schemas/SheetSignals'
+
+    SheetSignals:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Workbook sheet name
+        rows:
+          type: array
+          description: Leading rows from the sheet; each row is an array of cell text.
+          items:
+            type: array
+            items: { type: string }
 
     ExtractionResult:
       type: object

@@ -358,10 +358,13 @@ paths:
         The "Save" action on the LP Classification & Rate Assignment (Shadow BB) screen.
         LP records are created up front when match decisions are committed, so this writes the
         credit officer's edits onto real LP Master records. Rows are matched to existing records
-        by `(facilityId, name)`; unmatched names are ignored. LP entity fields (`cls`, `sp`, `mdy`,
-        `fitch`, `aum`, `nav`, `pension`, `pensionFunded`, `inc`, `uc`) update in place;
-        `ubsAdvRatePct` / `ubsConcLimitPct` (percentages) upsert into `lp_rates` for the period as
-        decimal fractions.
+        by `(facilityId, originalName || name)`; unmatched names are ignored. LP entity fields
+        (`name`, `parent`, `spv`, `investorType`, `instVsHnw`, `region`, `agentCls`, `cls`,
+        `sp`, `mdy`, `fitch`, `aum`, `nav`, `pension`, `pensionFunded`, `capCommit`, `inc`,
+        `uc`, `notes`) update in place when present. `ubsAdvRatePct` / `agentRatePct` /
+        `ubsConcLimitPct` / `agentConcLimitPct` are percentages; UBS rate and concentration
+        fields upsert into `lp_rates` for the period as decimal fractions. Blank or omitted `cls`
+        is preserved as Unclassified; the service no longer defaults it to Eligible.
       operationId: saveLPClassification
       requestBody:
         required: true
@@ -373,6 +376,7 @@ paths:
               properties:
                 facilityId:    { type: integer }
                 effectiveDate: { type: string, description: "YYYY-MM; defaults to current month", nullable: true }
+                audit:         { type: boolean, description: "true writes one aggregate audit entry; false/null is silent autosave", nullable: true }
                 rows:
                   type: array
                   items:
@@ -380,7 +384,16 @@ paths:
                     required: [name]
                     properties:
                       name:            { type: string }
-                      cls:             { type: string, nullable: true }
+                      originalName:    { type: string, nullable: true, description: "Previous persisted investor name when renaming a row" }
+                      parent:          { type: string, nullable: true }
+                      spv:             { type: boolean, nullable: true }
+                      investorType:    { type: string, nullable: true, description: "Alias: investor_type" }
+                      instVsHnw:       { type: string, nullable: true, description: "Aliases: inst_vs_hnw, type" }
+                      type:            { type: string, nullable: true, deprecated: true, description: "Accepted alias for instVsHnw" }
+                      region:          { type: string, nullable: true, description: "Aliases: region_location, regionLocation" }
+                      ig:              { type: boolean, nullable: true, description: "Investment Grade flag" }
+                      agentCls:        { type: string, nullable: true, description: "Agent LP Category" }
+                      cls:             { type: string, nullable: true, description: "UBS LP Category; blank/null represents Unclassified" }
                       sp:              { type: string, nullable: true }
                       mdy:             { type: string, nullable: true }
                       fitch:           { type: string, nullable: true }
@@ -388,16 +401,28 @@ paths:
                       nav:             { type: string, nullable: true, description: "Net Asset Value" }
                       pension:         { type: string, nullable: true, description: "Pension Assets" }
                       pensionFunded:   { type: string, nullable: true, description: "Pension Funded %" }
+                      capCommit:       { type: string, nullable: true, description: "Capital commitment" }
                       inc:             { type: boolean, nullable: true }
                       uc:              { type: string, nullable: true }
                       ubsAdvRatePct:   { type: number, nullable: true, description: "percent, e.g. 90.0" }
+                      agentRatePct:    { type: number, nullable: true, description: "percent, e.g. 65.0" }
                       ubsConcLimitPct: { type: number, nullable: true, description: "percent, e.g. 7.5" }
+                      agentConcLimitPct: { type: number, nullable: true, description: "percent, e.g. 10.0" }
+                      notes:           { type: string, nullable: true }
             example:
               facilityId: 12
               effectiveDate: "2026-06"
+              audit: true
               rows:
                 - name: CalPERS
-                  cls: Rated
+                  originalName: CalPERS
+                  parent: California Public Employees Retirement System
+                  spv: false
+                  investorType: Pension Fund
+                  instVsHnw: Institutional
+                  region: North America
+                  agentCls: Rated Included
+                  cls: Rated Investor
                   sp: AAA
                   inc: true
                   uc: "$20.0M"
@@ -686,6 +711,12 @@ paths:
     get:
       tags: [reports]
       summary: Concentration Exposures — breach list from the latest snapshot
+      description: >
+        Breaches are detected during each Shadow BB run using the thresholds stored in the
+        `conc_limits` config key (Config screen → Concentration Limits), matched by row label
+        (`Single LP max`, `Top-10 LP max`, `Unrated max (aggregate)`, `Non-US LP max`); missing
+        rows fall back to the seeded defaults (15/60/50/30%). The top-10 rule emits a `warning`
+        within 10 percentage points below its configured limit.
       operationId: getConcentrationReport
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
@@ -1418,7 +1449,7 @@ paths:
   /config/classification:
     get:
       tags: [config]
-      summary: LP classification options, rate maps, and qualifying criteria  [planned — returns 404]
+      summary: LP classification options, rate maps, and qualifying criteria
       operationId: getClassificationConfig
       responses:
         '200':
@@ -1427,6 +1458,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClassificationConfig'
+        '404':
+          description: No classification config key found in DB
 
   /config/eligibility:
     get:
