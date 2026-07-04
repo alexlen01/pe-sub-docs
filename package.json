@@ -5,7 +5,9 @@
   "type": "module",
   "description": "PE Sub Platform solution-design documents and generator",
   "scripts": {
-    "build:docx": "node scripts/generate-solution-design.mjs"
+    "build:docx": "node scripts/generate-solution-design.mjs",
+    "build:docx:v2": "node scripts/generate-solution-design-v2.mjs",
+    "build:guide": "node scripts/generate-user-guide.mjs"
   },
   "devDependencies": {
     "docx": "^9.6.1"

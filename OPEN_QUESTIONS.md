@@ -1,7 +1,7 @@
 # PE Sub Platform — Open Questions
 
 > Questions requiring a business or architectural decision before the relevant feature can be built or finalised.
-> Last updated: 2026-06-28 (Q14 added).
+> Last updated: 2026-07-04 (Q12 updated — platform auth built; IdP choice remains open).
 >
 > **Legend:** 🔴 Blocks Phase 1 build · 🟡 Affects Phase 1 design · 🔵 Phase 2 / deferred
 
@@ -177,9 +177,9 @@ Azure architecture target is confirmed but the specific hosting model is not.
 
 ### Q12 — Authentication: Azure AD (Entra ID) vs internal auth 🔵
 
-No authentication is implemented. All user context is hardcoded to "J. Smith". Unblocks: audit log user attribution, RBAC enforcement (Analyst vs Account/Transaction Manager), LP edit ownership.
+**Updated July 2026 — platform-side enforcement is now built.** `pe-sub-api` runs a stateless Spring Security chain with `dev` / `gateway` modes (`APP_SECURITY_MODE`), roles `ANALYST` / `ATM` / `SERVICE`, service-only ingest, ANALYST-only configuration surfaces, and audit-trail attribution to the authenticated principal (the "J. Smith" hardcode is gone). In `gateway` mode the platform consumes `X-Auth-User` / `X-Auth-Roles` headers from an SSO reverse proxy.
 
-**Open:** Azure AD (Entra ID) SSO — preferred for UBS internal tools — vs a standalone internal auth implementation.
+**Still open:** which identity provider fronts the gateway — Azure AD (Entra ID) SSO (preferred for UBS internal tools) vs a standalone internal auth implementation. This decision is now purely infrastructure: no application code change is required either way.
 
 ---
 
@@ -192,8 +192,8 @@ These items were raised during design but are **out of scope for Phase 1**. Reco
 | P2-1 | Workflow approvals and formal sign-off routing | Account Manager review, escalation paths, multi-step approval for credit decisions |
 | P2-2 | LP record purge / archival admin function | Phase 1 uses `inc = false` (soft-exclude). Hard delete or time-based archival is Phase 2 |
 | P2-3 | Scheduled monthly BB recalculation | `pe-sub-jobs` skeleton exists (port 3003); no jobs implemented. Monthly reset of `Active` → `Not Started` and auto-recalculation driven by `snapshot-freq` global setting |
-| P2-4 | Agent Bank Exposure report | One of four Step 6 report types; endpoint and UI not built |
-| P2-5 | Effective Advance Rate history report | `GET /api/reports/ear/:facilityId` planned; not implemented |
+| P2-4 | ~~Agent Bank Exposure report~~ ✅ Built (July 2026) | `GET /api/reports/agent-banks` — UBS exposure by agent bank from latest snapshots |
+| P2-5 | ~~Effective Advance Rate history report~~ ✅ Built (July 2026) | `GET /api/reports/ear/:facilityId` implemented across all snapshots |
 | P2-6 | Multi-class concentration limits in BB engine | `BbCalculationService` breach thresholds currently hardcoded; must be wired to `ConfigService` (Gap G1/G2) to make class-level CL configurable |
 
 ---

@@ -16,7 +16,7 @@
 | `pe-sub-extraction` | Spring Boot 3.5 / Java 21 document extraction service — parses XLSX/CSV agent schedules, returns structured LP records to `pe-sub-api`; maintains BB template registry |
 | `pe-sub-jobs` | Spring Boot 3.5 / Java 21 background jobs service — scheduled recalculations and async processing (skeleton; no jobs implemented yet) |
 | `pe-sub-infra` | Kubernetes manifests for local cluster (Docker Desktop / Rancher Desktop) and managed Kubernetes deployment |
-| `pe-sub-docs` | Solution design, OpenAPI specification (`openapi.yaml` v0.7.0), and Postman/Talend API collection |
+| `pe-sub-docs` | Solution design, OpenAPI specification (`openapi.yaml` v0.8.0), and Postman/Talend API collection |
 | `pe-sub-platform` | Working prototype only — used to gather and refine requirements; not deployed to production |
 
 ### Decision: flat repos, not a monorepo
@@ -56,7 +56,7 @@ Contains Kubernetes manifests for a local cluster (Docker Desktop / Rancher Desk
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | Language | TypeScript 5.x | |
-| Runtime | React 18, Vite 6 | |
+| Runtime | React 18, Vite 5 | |
 | Dev server proxy | Vite `server.proxy` | `/api` → `localhost:3001`; avoids CORS config in development |
 
 ---
@@ -101,13 +101,10 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 
 | File | Contents |
 |------|----------|
-| `V1_1__schema.sql` | All DDL — `users`, `facilities`, `lp_records`, `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables |
-| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers` 5-tier, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`); FM Dictionary — 30 canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), all aliases, blocklist, suggestions; BB template registry (3 agent banks, GS group headers using Agent LP Classification taxonomy); LP rates feed seeded from `lp_records` (effective 2025-01-01, `source='SIMULATED'`) |
-| `V1_3`–`V1_10` | BB template registry rows: KKR Ascendant, Audax VII, CCP VII Lev, AEP VII, CP VII, WF Blue Owl, GS Blue Owl, Petershill |
-| `V1_11__multi_tab_support.sql` | `lp_records.fund_sleeve` column; `bb_template_tabs.sleeve_name`; `bb_templates.auto_discover_tabs` |
-| `V1_12__multi_tab_templates.sql` | Audax VII three-sleeve config (Nerdio/Apptio/Marlin); CCP VII Lev auto-discover flag |
-| *(planned V1_13+)* `facility_seed.sql` | INSERT all 71 facility rows from Agent Bank Summary with `account_number`, `loan_amount`, `maturity_date`, `collateral_date`, `bank_status`, `bank_status_date` (Decision 30, 41) |
-| *(planned V1_14+)* `fm_alias_seed.sql` | Bank-scoped FM Dictionary aliases for WELLS_FARGO and SILICON_VALLEY_BANK (Decision 42; §10.2–10.4) |
+| `V1_1__schema.sql` | All DDL — `users`, `facilities` (incl. operational metadata: `account_number`, `loan_amount`, `maturity_date`, `collateral_date`, `bank_status`, `bank_status_date`), `lp_records` (incl. `fund_sleeve` and the four precise-money `*_num` columns), `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables (`bb_templates` / `bb_template_tabs` / `bb_template_groups`, slug- and class-keyed) |
+| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers` 5-tier, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`); FM Dictionary — canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), aliases, blocklist, suggestions; LP rates feed (`source='SIMULATED'`). Template registry rows are **not** seeded — templates enter exclusively via `POST /api/bb-templates/import` (`BB-Template-Import-*.xlsx`) |
+| `V1_3__config.sql` | Database-owned UI/domain configuration: `classification_config` (CLS/Agent CLS/UBS CLS option lists, UBS default rates, agent-rate→UBS-tier mapping, Agent→UBS CLS map) and further config keys; `matching_config` regex expansion patch |
+| `V1_4__report_history.sql` | `report_history` table — one row per generated report from the Reports screen; `facility_name` denormalised, `facility_id` soft link (`ON DELETE SET NULL`) |
 
 To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the next major release) and restart `pe-sub-api`. V1_1 and V1_2 are the consolidated base — do **not** modify them once a production DB has been initialised; use new numbered files instead (see Decision 44).
 
@@ -157,6 +154,8 @@ Column naming aligned with LP Master schema: API/DTO field names (e.g. `cls`, `u
 | Meta | notes, facility_id (FK → facilities), created_at, updated_at |
 
 Note: `rate` (BUSA advance rate) and computed fields (`ubb`, `delta`, `uec`) are **not stored** — they are derived at runtime by the BB engine from `cls` and `uc`. Only `abb` (agent's submitted BB value) is stored as a source field.
+
+**Precise money columns (dual-write).** Four money fields carry a `NUMERIC(20,2)` companion column holding exact absolute dollars alongside the formatted display string: `uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num`. Write paths keep both in sync — extraction ingest persists the exact extracted decimal plus the rounded display string (`"$12.3M"`); a Shadow BB commit re-derives the numerics from the committed strings and clears stale values. The BB engine computes from the numeric column when present and falls back to parsing the display string otherwise, so calculations are exact-dollar rather than re-parsed from rounded labels. The `*_num` columns are internal — never exposed on a DTO (resolves former Gap G10 for calculation purposes).
 
 ### `lp_rates`
 
@@ -281,7 +280,7 @@ Writers:
 - **ConfigController** — inserts `Config Change` on `PUT /api/config/eligibility`; inserts `Match Config Change` on `PUT /api/config/matching`; detail names the specific section in both cases
 - **FieldMappingController** — inserts `Field Mapping Change` on alias mutations
 
-All writers record `user_name = "J. Smith"` (hardcoded pending auth) and resolve IP via `X-Forwarded-For` → `remoteAddr`.
+All writers record `user_name` from the **authenticated principal** (Spring Security context — the dev-mode fixed identity or the gateway-supplied `X-Auth-User`) and resolve IP via `X-Forwarded-For` → `remoteAddr`. The forwarded-for value is only trusted in gateway mode (where the reverse proxy sets it); direct client-supplied values cannot spoof it.
 
 **Event detail formats by type:**
 
@@ -330,10 +329,30 @@ Platform configuration — advance rates, eligibility rules, concentration limit
 
 ## 5. API Routes
 
-Base path: `/api`. Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml` v0.7.0.  
-API test collection: `pe-sub-docs/pe-sub-platform.postman_collection.json` (Postman v2.1; imports into Talend API Tester).
+Base path: `/api`. Full OpenAPI 3.0 specification: `pe-sub-docs/openapi.yaml` v0.8.0 (includes security schemes).  
+API test collection: `pe-sub-docs/pe-sub-platform.postman_collection.json` (Postman v2.1; imports into Talend API Tester; carries `X-Auth-User` / `X-Auth-Roles` headers on all protected requests).
 
 **Status legend:** ✅ implemented · 🔲 planned
+
+### Security model (implemented)
+
+Stateless header/token security (`SecurityConfig` + `GatewayAuthenticationFilter`), controlled by `app.security.mode` (`APP_SECURITY_MODE` env var):
+
+| Mode | Identity source | Use |
+|------|-----------------|-----|
+| `dev` (default) | Fixed identity `local.analyst@ubs.dev` with role `ANALYST` (`app.security.dev-user` / `APP_SECURITY_DEV_USER`) | Local development — header-less UI works unchanged |
+| `gateway` | `X-Auth-User` / `X-Auth-Roles` headers injected by the SSO reverse proxy (Entra ID at the gateway) | Deployed environments — enabling enforcement is one config flag |
+
+Roles: `ANALYST` (operator + configurator), `ATM` (Account/Transaction Manager — review authority), `SERVICE` (service-to-service). Authorization rules:
+
+| Surface | Rule |
+|---------|------|
+| `OPTIONS *`, `/api/ping`, `/health`, `/actuator/health`, `/api/notifications/**` (SSE — EventSource cannot send headers) | Public |
+| `POST /api/lps/ingest` | `SERVICE` only (pe-sub-extraction → pe-sub-api) |
+| `PUT /api/config/**`; `POST/PUT/PATCH/DELETE /api/field-mapping/**`; `/api/bb-templates/**` | `ANALYST` only (RBAC matrix: ATM does not configure) |
+| Everything else under `/api/**` | Any authenticated operator (`ANALYST` or `ATM`) |
+
+Sessions and CSRF are disabled (stateless); unauthenticated requests receive `401`, role failures `403`. The 4-eye separation on submission completion remains a Phase-2 workflow control.
 
 ### Facilities
 
@@ -378,9 +397,12 @@ Writes an `LP Data Updated` audit event when at least one LP is updated.
 
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
-| GET | `/api/reports/collateral/:facilityId` | ✅ | Latest snapshot summary (Collateral & Coverage) |
+| GET | `/api/reports/collateral/:facilityId` | ✅ | Collateral & Coverage — BB certificate payload from a snapshot; `?snapshotId=` targets a specific snapshot (default latest) |
 | GET | `/api/reports/concentration/:facilityId` | ✅ | Latest breach list (Concentration Exposures) |
-| GET | `/api/reports/ear/:facilityId` | 🔲 | Effective Advance Rate history across all snapshots |
+| GET | `/api/reports/ear/:facilityId` | ✅ | Effective Advance Rate history across all snapshots |
+| GET | `/api/reports/agent-banks` | ✅ | UBS exposure aggregated by agent bank from each facility's latest snapshot |
+| GET | `/api/reports/history` | ✅ | Report generation history (50 most recent, newest first) |
+| POST | `/api/reports/history` | ✅ | Record a generated report (`report_history` row) |
 
 ### Submissions
 
@@ -489,8 +511,8 @@ Reports screen tabs correspond 1:1 to Step 6 outputs:
 | Step 6 Output | Tab ID | API endpoint | Status |
 |---------------|--------|--------------|--------|
 | Collateral Market Value & Coverage | `collateral` | `/api/reports/collateral/:id` | ✅ |
-| Effective Advance Rates | `ear` | `/api/reports/ear/:id` | 🔲 |
-| Agent Bank Exposure | `agent-bank` | TBD | 🔲 |
+| Effective Advance Rates | `ear` | `/api/reports/ear/:id` | ✅ |
+| Agent Bank Exposure | `agent-bank` | `/api/reports/agent-banks` | ✅ |
 | Concentration Exposures | `concentration` | `/api/reports/concentration/:id` | ✅ |
 | Ad Hoc Reporting | `adhoc` | TBD | 🔲 |
 
@@ -550,7 +572,7 @@ The platform operates with **two roles** — **Analyst** and **Account/Transacti
 | Audit Trail | own facilities | — | all facilities |
 | User management | ✓ | ✓ | — |
 
-**Source of truth:** [`pe-sub-platform/docs/RBAC_ROLES.md`](../pe-sub-platform/docs/RBAC_ROLES.md) holds the full permission matrix, Dashboard Resume-CTA mapping, and future auth-integration notes. DB role values are stored verbatim as `'Analyst'` | `'Account/Transaction Manager'` (see the `users` table in §4). Authentication is not yet implemented (Gap G6) — UI gates are a UX aid, not a security boundary; all write endpoints will enforce ownership + role checks server-side.
+**Source of truth:** [`pe-sub-platform/docs/RBAC_ROLES.md`](../pe-sub-platform/docs/RBAC_ROLES.md) holds the full permission matrix, Dashboard Resume-CTA mapping, and auth-integration notes. DB role values are stored verbatim as `'Analyst'` | `'Account/Transaction Manager'` (see the `users` table in §4). Server-side enforcement is now implemented (see §5 Security model): Spring Security roles `ANALYST` / `ATM` gate every endpoint, configuration surfaces are ANALYST-only, and the audit trail records the authenticated principal. Per-submission ownership checks and 4-eye completion remain Phase 2.
 
 ---
 
@@ -602,16 +624,16 @@ The platform operates with **two roles** — **Analyst** and **Account/Transacti
 | G2 | **TypeScript BB engine (`bbCalculationService.ts`) also hardcoded** | Client-side live preview diverges from configurable values | Same issue as G1; both engines must be updated together (see Decision 3) |
 | G3 | **`pe-sub-jobs` is empty** | No scheduled recalculations or async processing | Service skeleton exists (port 3003, Kubernetes manifest); no jobs implemented. `snapshot-freq` global setting is stored correctly but not consumed |
 | G4 | **LP Match Queue — API implemented, UI not yet built** | Ingest "Queued" rows can be retrieved via API but cannot be reviewed in the UI | `GET /api/matching/queue` and `PATCH /api/matching/queue/:id` are implemented. The MatchQueue screen exists in the UI (skeleton) but the credit officer review workflow is the next milestone |
-| G6 | **Authentication not implemented** | All user context hardcoded to "J. Smith" | No session management, no role enforcement. Affects every audit log entry, every LP reclassification, and every config change |
+| G6 | ~~**Authentication not implemented**~~ ✅ **Resolved (July 2026)** | Header/gateway security implemented: `dev` / `gateway` modes, `ANALYST`/`ATM`/`SERVICE` roles, stateless Spring Security chain; audit trail records the authenticated principal | Remaining: Entra ID SSO wiring at the reverse proxy (gateway mode consumes `X-Auth-User`/`X-Auth-Roles`); per-submission ownership checks (Phase 2) |
 | G7 | **`_eligCache` stale after Configuration screen saves** | Saving config, then navigating away and back returns pre-edit values until page refresh | Module-level promise cache in `configService.ts` is not invalidated by `PUT /api/config/eligibility`; `Configuration/index.tsx` bypasses the cache (calls `api.config.eligibility()` directly) but other consumers still hit the stale cache |
 | G8 | **`wizard_config`, `audit_config`, `report_config` not seeded** | `GET /api/config/wizard`, `/audit`, `/reports` always return 404 | UI falls back to local TypeScript constants transparently, but config is not editable or DB-backed for these three sections |
-| G9 | **Reports: Agent Bank Exposure** | One of four Step 6 report types not implemented | Agent bank exposure endpoint is planned but not built |
-| G10 | **`lp_records` financial fields stored as `VARCHAR`** | `aum`, `cap_commit`, `uncalled_capital`, `agent_rate`, `agent_bb`, `agent_conc` etc. are `VARCHAR(50)` columns containing formatted money strings (`"$25.0M"`). Calculations use `BbCalculationService.parseMoney()` to convert at runtime | Should be `NUMERIC` columns; string parsing is fragile and prevents direct SQL aggregation |
+| G9 | ~~**Reports: Agent Bank Exposure**~~ ✅ **Resolved (July 2026)** | `GET /api/reports/agent-banks` aggregates UBS exposure by agent bank from each facility's latest snapshot; EAR history (`/api/reports/ear/:id`) and report history (`/api/reports/history`, backed by `report_history`) also implemented | Remaining Step 6 item: Ad Hoc Reporting |
+| G10 | ~~**`lp_records` financial fields stored as `VARCHAR`**~~ ✅ **Resolved for calculations (July 2026)** | Four precise `NUMERIC(20,2)` companion columns (`uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num`) are dual-written with the display strings; the BB engine computes from exact dollars first, falling back to `parseMoney()` only when no numeric exists | Display strings remain the API/UI contract. Remaining (cosmetic): rates/percentages still string-typed; direct SQL aggregation now possible on the four `*_num` columns |
 
 ### Open questions
 
 - **Azure architecture**: Container Apps vs App Service, region, networking, Key Vault integration
-- **Authentication**: Azure AD (Entra ID) SSO vs internal auth — to be confirmed. Unblocks G6
+- **Authentication**: platform-side enforcement is built (G6 resolved). Remaining decision: Entra ID SSO at the reverse proxy (which populates `X-Auth-User` / `X-Auth-Roles` in gateway mode) vs an internal identity provider
 - **LP identifier (Decision 13)**: LEI vs internal UBS counterparty ID — decision pending
 - **`pe-sub-infra` → AKS**: when Azure architecture is confirmed, extend Kubernetes manifests for AKS (registry, ingress, managed identity, secrets from Key Vault)
 
@@ -831,6 +853,9 @@ The following fields were required in the `lp_records` table to support the full
 | 44 | SQL migrations V1_3–V1_7 consolidated back into V1_1/V1_2 (2026-06-13) | While no production DB exists, incremental ALTER/CREATE migrations added maintenance overhead without the checksum-safety benefit they provide post-launch. All changes (wizard_step/shadow_bb_overrides on submissions, lp_rates table, agent_tiers 5-tier update, Agent/UBS LP Classification split, lp_records rename + column renames) were absorbed into the two base files so fresh environments initialise from a single coherent snapshot. **Rule:** once V1_1 and V1_2 have been applied to a production DB, they must never be modified. All subsequent schema changes go in new `V1_N__` or `V2_1__` files. |
 | 45 | Shadow BB screen table expanded to 28 columns — full LP record in the grid (2026-06-13) | The Shadow BB LP table was extended from 10 summary columns to the full 28-column layout defined in `pe-sub-docs/SHADOW_BB_ANALYSIS.md`: Rank, Investor Name, Parent, SPV, UBS Classification, Inst/HNW, Inv. Grade?, Agent Classification, S&P, Moody's, Fitch, LP Size ($B), Size Criteria, UBS Rate, Agent Rate, Cap. Commit., Uncalled, Agent Conc. Limit, UBS Conc. Limit, % of Commit., Called Cap., % Uncalled, % LP Called, Agent Excess, UBS Excess, Agent BB, UBS BB, Notes. Columns removed: Delta, UBS Eligible, Incl. Agent Excess Concentration is a new computed field on `ComputedLPRecord` (`agentExcessM = MAX(0, ucM − totalAllUC × agentConcPct)`) derived in `computePortfolioBB` after the portfolio total is known. `agentCls?: string` added as an optional field to the `LP` type for the Agent LP Classification column. |
 | 46 | Name matching optimised — exact-match fast path + length-band candidate pruning + parallel scoring (2026-06-13) | **Symptom:** severe slowdown when the *same* Agent BB was uploaded a second time (reported on Blue Owl GP Stakes V). **Root cause:** `MatchingService.buildMatchQueueEntries` (the `POST /{id}/confirm` step) loads the **bank-wide** LP Master name list (`LpRepository.findAllDistinctNames()`) and scored every extracted row against every master name with combined Jaro-Winkler + Levenshtein — O(rows × names) — and (a) re-normalised the whole candidate list for *every* row, while (b) `normalize()` called `String.replaceAll(...)` per abbreviation and per legal suffix, recompiling a regex `Pattern` on each call → O(rows × names × (#abbrev + #suffix)) regex compilations. The second upload is worse because the first upload's `commitAcceptedMatches` inserts that BB's investors as new LP Master records, so the re-upload re-matches every row against a list grown by exactly those names — both factors of the product jump at once. **Fix** — four layers behind an immutable `MatchingService.Prepared` index built once per upload: (1) **regex pre-compilation** — abbreviation/suffix patterns compiled once into `Config`, plus static punctuation/whitespace patterns; the candidate list is normalised once at `prepare()`, not per row; (2) **exact-match fast path** — `Prepared` holds a `normalized → first-original` map, so a row whose name already exists verbatim in master (the duplicate-upload case) resolves in O(1) at score 100 / `Accept` with no fuzzy scoring, collapsing the dominant cost of the reported scenario; (3) **length-band pruning** — candidates indexed sorted by normalised length; given weights `jwWeight·jw + levWeight·lev` and review threshold T, a candidate whose length is outside `[(1−f)·a, a/(1−f)]` with `f = 1 − (T − jwWeight)/levWeight` cannot reach T even with a perfect Jaro-Winkler, so it is skipped without changing any Accept/Queue/Reject decision or matched name; auto-disabled when the math admits no safe pruning (e.g. `jwWeight ≥ T`); (4) **parallel scoring** — `buildMatchQueueEntries` scores rows via `parallelStream()`; fuzzy matching is CPU-bound and each row is independent, and `Prepared` is immutable so this is thread-safe. Deliberately uses the common ForkJoinPool (platform threads), **not** virtual threads, which would oversubscribe cores on CPU-bound work; persistence stays out of the parallel section. **Bank-wide matching is unchanged** — every existing LP record is still a candidate; only provably useless work is skipped. Tie-break preserved (lowest candidate index wins, matching a sequential full scan); the only observable difference is that the displayed `match_score` of an ultimately below-threshold "New LP" row may differ, since hopeless candidates are not scored — the decision and matched name are identical. `LpIngestService.ingest` inherits layers 1–3 through `prepare`/`matchBest` (left sequential — its loop interleaves DB writes). Guarded by `MatchingServiceTest` (exact-duplicate fast path; length-band-vs-exhaustive-scan equivalence property test). Supersedes the per-row `matchBestInList` usage from Decision 19 (the method remains as a thin wrapper over `prepare`/`matchBest`). **Future option:** a token/trigram inverted-index blocking key prunes far more aggressively but is only heuristically decision-safe, so it was left out of this pass. |
+| 47 | Header/gateway authentication with `dev` / `gateway` modes (2026-07) | Stateless Spring Security chain; identity established by `GatewayAuthenticationFilter` from `X-Auth-User`/`X-Auth-Roles` (gateway mode, injected by the SSO reverse proxy) or a fixed dev identity (`local.analyst@ubs.dev`, role ANALYST). Roles ANALYST / ATM / SERVICE mirror RBAC_ROLES.md; `POST /api/lps/ingest` is SERVICE-only; configuration surfaces (config, field-mapping, bb-templates mutations) are ANALYST-only; ping/health/SSE are public (EventSource cannot send headers). Enabling real enforcement in a deployed environment is one config flag (`APP_SECURITY_MODE=gateway`) — no code change. Audit writers switched from the hardcoded "J. Smith" to the authenticated principal |
+| 48 | Precise numeric money columns dual-written with display strings (2026-07) | `uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num` (`NUMERIC(20,2)`, absolute dollars) persist alongside the formatted display strings. Ingest writes the exact extracted decimal + rounded display; a Shadow BB commit re-derives numerics from the committed strings (clearing stale values so a fresh string always wins). The BB engine reads the exact value first and only falls back to `parseMoney(display)`. Columns are internal — never on a DTO — so the API/UI contract is unchanged |
+| 49 | Shadow BB run is one atomic transaction (`ShadowBbService`); snapshots leave the service as `BbSnapshotDto` | LP upserts, snapshot insert, facility `last_run_at`/status update and audit entry commit or roll back together — no partial runs. The `BbSnapshot` entity stays off the wire per the no-entities-in-responses rule |
 
 ---
 

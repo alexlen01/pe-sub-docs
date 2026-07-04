@@ -37,6 +37,17 @@ Primary LP storage is `pe-sub-api` `lp_records`, represented by `Lp` and exposed
 | UBSBB | `ubb` | `ubb` | `ubs_bb` | UBS borrowing base. |
 | BBDate | Facility-level `lastRunAt` | `Facility.lastRunAt` | `facilities.last_run_at` | Facility-level last BB run date. Not an LP-level field. |
 
+## Precise Numeric Companion Columns (internal)
+
+Four money fields are dual-stored: the formatted display string (columns above) plus an exact-dollar `NUMERIC(20,2)` companion used by the BB engine. The numeric columns are internal — they never appear on `LpDto` or in the UI.
+
+| Display column | Numeric companion | Written by |
+|---|---|---|
+| `uncalled_capital` | `uncalled_capital_num` | Extraction ingest (exact decimal) and Shadow BB commit (re-derived from committed string) |
+| `cap_commit` | `cap_commit_num` | Same |
+| `aum` | `aum_num` | Same |
+| `agent_bb` | `agent_bb_num` | Same; cleared when the committed `abb` string is blank |
+
 ## Related LP Fields Not In The Provided Source List
 
 | LP API / UI field | Entity property | DB column | Purpose |

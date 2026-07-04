@@ -627,13 +627,20 @@ paths:
   /reports/collateral/{facilityId}:
     get:
       tags: [reports]
-      summary: Collateral Market Value & Coverage — latest snapshot summary
+      summary: Collateral Market Value & Coverage — BB certificate data from a snapshot
       operationId: getCollateralReport
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
+        - name: snapshotId
+          in: query
+          schema:
+            type: integer
+          description: >
+            Report on a specific snapshot of this facility. Omit for the latest snapshot.
+            404 if the snapshot does not exist or belongs to another facility.
       responses:
         '200':
-          description: Facility ID, calculatedAt, and BBSummary from the latest snapshot
+          description: Certificate payload — facility identity, snapshot summary, and LP category breakdown
           content:
             application/json:
               schema:
@@ -641,11 +648,37 @@ paths:
                 properties:
                   facilityId:
                     type: integer
+                  facilityName:
+                    type: string
+                  agentBank:
+                    type: string
+                  snapshotId:
+                    type: integer
                   calculatedAt:
                     type: string
                     format: date-time
                   summary:
                     $ref: '#/components/schemas/BBSummary'
+                  totalEligibleUncalledM:
+                    type: number
+                    description: Sum of eligible uncalled capital across LPs ($ millions)
+                  classBreakdown:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cls:
+                          type: string
+                          description: LP category label (legacy tiers first, canonical order)
+                        count:
+                          type: integer
+                        uncalledM:
+                          type: number
+                        ubbM:
+                          type: number
+                        rate:
+                          type: string
+                          description: UBS advance rate for the tier, e.g. "90%"
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -674,13 +707,13 @@ paths:
   /reports/ear/{facilityId}:
     get:
       tags: [reports]
-      summary: Effective Advance Rate history across all snapshots  [planned — returns 404]
+      summary: Effective Advance Rate history across all snapshots
       operationId: getEARReport
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
       responses:
         '200':
-          description: Array of EAR data points ordered by calculatedAt
+          description: Array of EAR data points ordered by calculatedAt (oldest first; empty when no snapshots)
           content:
             application/json:
               schema:
@@ -698,6 +731,87 @@ paths:
                       type: number
                     earDelta:
                       type: number
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /reports/agent-banks:
+    get:
+      tags: [reports]
+      summary: UBS exposure aggregated by agent bank from each facility's latest snapshot
+      operationId: getAgentBankExposure
+      responses:
+        '200':
+          description: One row per agent bank, sorted by UBS BB descending ($ millions)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    agentBank:
+                      type: string
+                    facilityCount:
+                      type: integer
+                      description: All facilities for the bank, including those without a snapshot
+                    lpCount:
+                      type: integer
+                    ubsBBM:
+                      type: number
+                    agentBBM:
+                      type: number
+                    deltaM:
+                      type: number
+                      description: ubsBBM − agentBBM
+
+  /reports/history:
+    get:
+      tags: [reports]
+      summary: Report generation history (50 most recent, newest first)
+      operationId: listReportHistory
+      responses:
+        '200':
+          description: Array of report history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReportHistoryEntry'
+    post:
+      tags: [reports]
+      summary: Record a generated report
+      operationId: recordReportHistory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [report]
+              properties:
+                report:
+                  type: string
+                  description: Report name, e.g. "Collateral & Coverage"
+                facilityId:
+                  type: integer
+                  description: Omit for portfolio-wide reports
+                snapshotLabel:
+                  type: string
+                format:
+                  type: string
+                  description: PDF / XLSX / Both
+      responses:
+        '201':
+          description: The stored history entry (userName resolved from the request identity)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportHistoryEntry'
+        '400':
+          description: Missing report name
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ── Submissions ───────────────────────────────────────────────────────────────
 
@@ -1709,11 +1823,24 @@ components:
     BBBreach:
       type: object
       properties:
-        rule:     { type: string, description: Breach rule name }
-        entity:   { type: string, description: LP name or group label }
-        value:    { type: string, description: Actual concentration value e.g. "51.8%" }
-        limit:    { type: string, description: Credit agreement limit e.g. "50%" }
+        type:     { type: string, enum: [single-lp, top10, unrated, non-us], description: Concentration test that tripped }
         severity: { type: string, enum: [breach, warning] }
+        message:  { type: string, description: Human-readable detail incl. the LP or group }
+        value:    { type: number, description: Actual concentration as a decimal fraction, e.g. 0.518 }
+        limit:    { type: number, description: Credit agreement limit as a decimal fraction, e.g. 0.5 }
+
+    ReportHistoryEntry:
+      type: object
+      description: One generated report (report_history table, V1_4__report_history.sql)
+      properties:
+        id:            { type: integer }
+        report:        { type: string }
+        facilityId:    { type: integer, nullable: true, description: Null for portfolio-wide reports }
+        facilityName:  { type: string, nullable: true, description: Denormalised — survives facility deletion }
+        snapshotLabel: { type: string, nullable: true }
+        format:        { type: string, nullable: true }
+        userName:      { type: string, nullable: true }
+        createdAt:     { type: string, format: date-time }
 
     BBResult:
       type: object
