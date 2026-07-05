@@ -12,9 +12,9 @@
 | Repo | Purpose |
 |------|---------|
 | `pe-sub-ui` | React / TypeScript / Vite frontend. Domain types (`LP`, `Facility`, `BBResult`, etc.) live in `src/types/` |
-| `pe-sub-api` | Spring Boot 3.5 / Java 21 REST API — business logic, route handlers, JPA / DB access |
-| `pe-sub-extraction` | Spring Boot 3.5 / Java 21 document extraction service — parses XLSX/CSV agent schedules, returns structured LP records to `pe-sub-api`; maintains BB template registry |
-| `pe-sub-jobs` | Spring Boot 3.5 / Java 21 background jobs service — scheduled recalculations and async processing (skeleton; no jobs implemented yet) |
+| `pe-sub-api` | Spring Boot 4.1 / Java 25 REST API — business logic, route handlers, JPA / DB access |
+| `pe-sub-extraction` | Spring Boot 4.1 / Java 25 document extraction service — parses XLSX/CSV agent schedules, returns structured LP records to `pe-sub-api`; maintains BB template registry |
+| `pe-sub-jobs` | Spring Boot 4.1 / Java 25 / Spring Batch 6 ingestion jobs service — CSV upserts (`facility-ingest`, `lp-master-ingest`) into the shared PostgreSQL |
 | `pe-sub-infra` | Kubernetes manifests for local cluster (Docker Desktop / Rancher Desktop) and managed Kubernetes deployment |
 | `pe-sub-docs` | Solution design, OpenAPI specification (`openapi.yaml` v0.8.0), and Postman/Talend API collection |
 | `pe-sub-platform` | Working prototype only — used to gather and refine requirements; not deployed to production |
@@ -29,7 +29,7 @@ Chosen: flat repos.
 
 ### `pe-sub-infra` — current state
 
-Contains Kubernetes manifests for a local cluster (Docker Desktop / Rancher Desktop). Terraform for Azure cloud resources remains deferred until the cloud architecture is confirmed. Target Azure resources include Container Apps (or App Service), Azure Database for PostgreSQL Flexible Server, Azure Key Vault, and networking / DNS. See §6 for current state.
+Contains Kubernetes manifests for a local cluster (Docker Desktop / Rancher Desktop). Terraform for Azure cloud resources remains deferred until the cloud architecture is confirmed. The UBS Azure Cloud service catalog offers Azure Functions, AKS, or Web Apps (Azure Container Apps is not available); **AKS is the confirmed compute target** for the three Spring Boot services — Functions does not fit long-running Spring services, and Web Apps offers no orchestration for a multi-service topology. Remaining target resources: Azure Database for PostgreSQL Flexible Server, Azure Key Vault, container registry, and networking / DNS. The React UI will be served either from a Web App or behind the AKS ingress (decision pending). See §6 for current state.
 
 ---
 
@@ -39,16 +39,16 @@ Contains Kubernetes manifests for a local cluster (Docker Desktop / Rancher Desk
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
-| Language | Java 21 (LTS) | All three backend services |
-| Runtime | Spring Boot 3.5 | All three backend services |
-| Build tool | Maven 3.9 + Maven Wrapper (`mvnw`) | Pins Maven version; no pre-install required in Docker / CI |
-| ORM / persistence | Spring Data JPA (Hibernate 6) | `pe-sub-api` and `pe-sub-extraction` |
-| Schema / migrations | Flyway | SQL migrations in `pe-sub-api/src/main/resources/db/migration/`; applied automatically on startup |
+| Language | Java 25 (LTS) | All three backend services (upgraded from Java 21, July 2026) |
+| Runtime | Spring Boot 4.1 | All three backend services (upgraded from Boot 3.5, July 2026). Modularized auto-configuration: Flyway needs `spring-boot-starter-flyway`; MockMvc tests need `spring-boot-starter-webmvc-test`; `@WithMockUser` needs `spring-boot-starter-security-test` |
+| Build tool | Maven 3.9 | Maven Wrapper removed during the Boot 4.1 upgrade — builds require a local Maven install |
+| ORM / persistence | Spring Data JPA (Hibernate 7) | `pe-sub-api` and `pe-sub-extraction` |
+| Schema / migrations | Flyway (`spring-boot-starter-flyway`) | SQL migrations in `pe-sub-api/src/main/resources/db/migration/`; applied automatically on startup |
 | Database | PostgreSQL 16 | Azure Database for PostgreSQL Flexible Server in production; Docker locally |
-| JSON / JSONB | Jackson 2, `PGobject` | `bb_snapshots.result` column via `AttributeConverter` |
+| JSON / JSONB | Jackson 3 (`tools.jackson.*`), `PGobject` | `bb_snapshots.result` column via `AttributeConverter`. Jackson 2 fully removed; annotations remain `com.fasterxml.jackson.annotation`. Jackson 2 null-to-primitive parity kept via `spring.jackson.deserialization.fail-on-null-for-primitives: false` in `pe-sub-api` |
 | HTTP client | Spring `RestClient` | `pe-sub-api` → `pe-sub-extraction` calls |
-| XLSX / XLS parsing | Apache POI 5.3.0 (`poi-ooxml`) | `pe-sub-extraction` |
-| CSV parsing | Apache Commons CSV 1.11.0 | `pe-sub-extraction` |
+| XLSX / XLS parsing | Apache POI 5.5.1 (`poi-ooxml`) | `pe-sub-extraction` |
+| CSV parsing | Apache Commons CSV 1.14.1 | `pe-sub-extraction` |
 | Logging | Logback via `logback-spring.xml` | Rolling daily log, gzip archive, 30-day retention, 2 GB cap; both `pe-sub-api` and `pe-sub-extraction` |
 
 ### Frontend (pe-sub-ui)

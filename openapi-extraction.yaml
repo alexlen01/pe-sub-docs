@@ -3,7 +3,7 @@ openapi: 3.0.3
 info:
   title: PE Subscription Platform — Extraction Service API
   description: |
-    REST API for `pe-sub-extraction` (Spring Boot 3.5 / Java 21), the document
+    REST API for `pe-sub-extraction` (Spring Boot 4.1 / Java 25), the document
     extraction service of the PE Subscription Borrowing Base platform.
 
     **Role**
@@ -18,7 +18,7 @@ info:
     `pe-sub-api`'s `/api/lps/ingest` endpoint (standalone testing only).
 
     Core API spec for `pe-sub-api`: `pe-sub-docs/openapi.yaml`.
-  version: 0.1.0
+  version: 1.0.0
   contact:
     name: PE Sub Platform Team
 

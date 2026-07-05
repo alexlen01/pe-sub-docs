@@ -10,9 +10,9 @@ info:
     |---|---|---|
     | `pe-sub-api` | 3001 | Core REST API — LPs, facilities, BB calculation, submissions, audit |
     | `pe-sub-extraction` | 3002 | Document extraction — parses XLSX/CSV agent schedules, posts to `/lps/ingest` |
-    | `pe-sub-jobs` | 3003 | Background jobs — scheduled recalculations and async processing |
+    | `pe-sub-jobs` | 3003 | Spring Batch 6 ingestion jobs — CSV upserts (`facility-ingest`, `lp-master-ingest`) into the shared PostgreSQL |
 
-    This spec covers `pe-sub-api` (Spring Boot 3.5 / Java 21). The extraction service
+    This spec covers `pe-sub-api` (Spring Boot 4.1 / Java 25). The extraction service
     (`pe-sub-extraction`, port 3002) is documented separately in `pe-sub-docs/openapi-extraction.yaml`.
 
     **Route status legend**

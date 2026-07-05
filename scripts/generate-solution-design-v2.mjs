@@ -198,9 +198,9 @@ const architecture = [
     ['Service', 'Stack', 'Port', 'Role'],
     [
       ['pe-sub-ui', 'React 18 · TypeScript 5 · Vite (Context API — no Redux)', '3000', 'Analyst workspace; 13 screens; calls pe-sub-api exclusively via the dev proxy'],
-      ['pe-sub-api', 'Spring Boot 3.5 · Java 21 · PostgreSQL 16 · Flyway', '3001', 'All business logic: LP Master, BB engine, submissions, matching, configuration, audit, security'],
-      ['pe-sub-extraction', 'Spring Boot 3.5 · Java 21 · Apache POI / Commons CSV', '3002', 'Stateless, deterministic document parser: /api/inspect (raw signals) and /api/extract (structured records). No recognition logic and no persistence'],
-      ['pe-sub-jobs', 'Spring Boot 3.5 · Spring Batch', '3003', 'Background jobs service (seed/ingest jobs; scheduled recalculation planned)'],
+      ['pe-sub-api', 'Spring Boot 4.1 · Java 25 · PostgreSQL 16 · Flyway', '3001', 'All business logic: LP Master, BB engine, submissions, matching, configuration, audit, security'],
+      ['pe-sub-extraction', 'Spring Boot 4.1 · Java 25 · Apache POI / Commons CSV', '3002', 'Stateless, deterministic document parser: /api/inspect (raw signals) and /api/extract (structured records). No recognition logic and no persistence'],
+      ['pe-sub-jobs', 'Spring Boot 4.1 · Java 25 · Spring Batch 6', '3003', 'CSV ingestion jobs (facility-ingest, lp-master-ingest) upserting into the shared PostgreSQL; scheduled recalculation planned'],
       ['PostgreSQL 16', 'Azure Database for PostgreSQL Flexible Server (target); Docker locally', '5432', 'Single persistent store; schema owned by Flyway migrations in pe-sub-api'],
     ]
   ),

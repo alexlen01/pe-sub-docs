@@ -1,6 +1,6 @@
 # Contract: `pe-sub-api` ⇄ `pe-sub-extraction`
 
-**Stack:** Spring Boot 3.5 / OpenJDK 21 (both services) · React + Vite + TypeScript (`pe-sub-ui`).
+**Stack:** Spring Boot 4.1 / OpenJDK 25 (both services) · React + Vite + TypeScript (`pe-sub-ui`).
 **Principle:** recognition + orchestration live in `pe-sub-api`; `pe-sub-extraction` is a stateless,
 deterministic parser. No agent-bank/fund names are hardcoded in any layer — they come only from
 template contents (the imported registry) or user entry.
