@@ -9,7 +9,7 @@ info:
     | Service | Port | Role |
     |---|---|---|
     | `pe-sub-api` | 3001 | Core REST API — LPs, facilities, BB calculation, submissions, audit |
-    | `pe-sub-extraction` | 3002 | Document extraction — parses XLSX/CSV agent schedules, posts to `/lps/ingest` |
+    | `pe-sub-extraction` | 3002 | Document extraction — parses XLSX/CSV agent schedules, posts to `/lpRecords/ingest` |
     | `pe-sub-jobs` | 3003 | Spring Batch 6 ingestion jobs — CSV upserts (`facility-ingest`, `lp-master-ingest`) into the shared PostgreSQL |
 
     This spec covers `pe-sub-api` (Spring Boot 4.1 / Java 25). The extraction service
@@ -23,7 +23,7 @@ info:
     **Authentication** — stateless, header-based. In `gateway` mode (production, behind UBS SSO)
     every request must carry `X-Auth-User` and `X-Auth-Roles`; a missing user header returns `401`.
     In `dev` mode (default local) a fixed dev identity is injected so no headers are required.
-    Roles: `ANALYST`, `ATM`, `SERVICE`. `POST /lps/ingest` requires `SERVICE`; configuration and
+    Roles: `ANALYST`, `ATM`, `SERVICE`. `POST /lpRecords/ingest` requires `SERVICE`; configuration and
     field-mapping mutations require `ANALYST` — an insufficient role returns `403`. Public routes
     (`/ping`, `/health`, `/notifications/**`) need no identity.
   version: 0.8.0
@@ -42,7 +42,7 @@ security:
 tags:
   - name: facilities
     description: Facility-level records and status management
-  - name: lps
+  - name: lpRecords
     description: LP Master records — identity, ratings, classification, commitment data
   - name: borrowing-base
     description: Shadow BB calculation engine, snapshot history, and summary extensions
@@ -281,9 +281,9 @@ paths:
 
   # ── LPs ──────────────────────────────────────────────────────────────────────
 
-  /lps:
+  /lpRecords:
     get:
-      tags: [lps]
+      tags: [lpRecords]
       summary: List LP records
       operationId: listLPs
       parameters:
@@ -312,9 +312,9 @@ paths:
                 items:
                   $ref: '#/components/schemas/LP'
 
-  /lps/{id}:
+  /lpRecords/{id}:
     get:
-      tags: [lps]
+      tags: [lpRecords]
       summary: Get a single LP record
       operationId: getLP
       parameters:
@@ -329,7 +329,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
-      tags: [lps]
+      tags: [lpRecords]
       summary: Update LP fields (classification override, reclassify, notes, etc.)
       operationId: updateLP
       parameters:
@@ -350,16 +350,16 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /lps/classification:
+  /lpRecords/classification:
     patch:
-      tags: [lps]
+      tags: [lpRecords]
       summary: Batch-save classification & rate edits onto persisted LP records
       description: >
         The "Save" action on the LP Classification & Rate Assignment (Shadow BB) screen.
         LP records are created up front when match decisions are committed, so this writes the
         credit officer's edits onto real LP Master records. Rows are matched to existing records
         by `(facilityId, originalName || name)`; unmatched names are ignored. LP entity fields
-        (`name`, `parent`, `spv`, `investorType`, `instVsHnw`, `region`, `agentCls`, `cls`,
+        (`name`, `parent`, `spv`, `investorType`, `instVsHnw`, `region`, `agentCls`, `agentClsSource`, `cls`,
         `sp`, `mdy`, `fitch`, `aum`, `nav`, `pension`, `pensionFunded`, `capCommit`, `inc`,
         `uc`, `notes`) update in place when present. `ubsAdvRatePct` / `agentRatePct` /
         `ubsConcLimitPct` / `agentConcLimitPct` are percentages; UBS rate and concentration
@@ -393,6 +393,7 @@ paths:
                       region:          { type: string, nullable: true, description: "Aliases: region_location, regionLocation" }
                       ig:              { type: boolean, nullable: true, description: "Investment Grade flag" }
                       agentCls:        { type: string, nullable: true, description: "Agent LP Category" }
+                      agentClsSource:  { type: string, nullable: true, enum: [EXTRACTED, DERIVED, USER_EDITED], description: "Provenance of agentCls; omitted or invalid values fall back to USER_EDITED when agentCls is present" }
                       cls:             { type: string, nullable: true, description: "UBS LP Category; blank/null represents Unclassified" }
                       sp:              { type: string, nullable: true }
                       mdy:             { type: string, nullable: true }
@@ -422,6 +423,7 @@ paths:
                   instVsHnw: Institutional
                   region: North America
                   agentCls: Rated Included
+                  agentClsSource: EXTRACTED
                   cls: Rated Investor
                   sp: AAA
                   inc: true
@@ -438,9 +440,9 @@ paths:
                 properties:
                   updated: { type: integer }
 
-  /lps/ingest:
+  /lpRecords/ingest:
     post:
-      tags: [lps, extraction]
+      tags: [lpRecords, extraction]
       summary: Ingest extracted LP records from pe-sub-extraction
       description: >
         Called by `pe-sub-extraction` after parsing an agent schedule file.
@@ -492,9 +494,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/IngestResult'
 
-  /lps/rates:
+  /lpRecords/rates:
     get:
-      tags: [lps]
+      tags: [lpRecords]
       summary: LP advance rates and concentration limits as of a given period
       description: >
         Returns the most-recent `lp_rates` row per LP with `effective_date ≤ effective_date`
@@ -520,9 +522,9 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
-  /lps/rates/batch:
+  /lpRecords/rates/batch:
     post:
-      tags: [lps]
+      tags: [lpRecords]
       summary: Upsert a batch of LP advance rates for one period
       description: >
         Bulk-inserts or updates `lp_rates` rows for a single `effectiveDate`. LP lookup is by
@@ -1444,6 +1446,57 @@ paths:
         '200':
           description: Updated thresholds
 
+  # ── BB Templates ──────────────────────────────────────────────────────────────
+
+  /bb-templates/import:
+    post:
+      tags: [extraction]
+      summary: Import a structured BB template workbook (XLSX)
+      description: >
+        Imports a `BB-Template-Import-*.xlsx` workbook and creates the corresponding
+        `bb_templates` row (with tabs). With `mode=upsert` an existing template with the
+        same `template_slug` is replaced instead of rejected, making the import idempotent —
+        this is how `pe-sub-jobs` pushes workbooks from its watched `data/bb-templates/`
+        directory on startup and rescan.
+      operationId: importBbTemplate
+      parameters:
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [create, upsert]
+            default: create
+          description: create rejects duplicate template slugs; upsert replaces them in place
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Imported template profile including parsed tabs
+          content:
+            application/json:
+              schema:
+                type: object
+                description: BB template profile (BbTemplateDto)
+                properties:
+                  id:             { type: integer }
+                  templateSlug:   { type: string }
+                  templateName:   { type: string }
+                  agentName:      { type: string }
+                  templateClass:  { type: string }
+                  sheetName:      { type: string, nullable: true }
+                  headerRowIndex: { type: integer, nullable: true }
+                  autoLearned:    { type: boolean }
+                  tabs:           { type: array, items: { type: object } }
+
   # ── Config ────────────────────────────────────────────────────────────────────
 
   /config/classification:
@@ -1721,6 +1774,8 @@ components:
         type:          { $ref: '#/components/schemas/InvestorType' }
         region:        { $ref: '#/components/schemas/Region' }
         ig:            { type: boolean, description: Investment Grade flag }
+        agentCls:      { type: string, nullable: true, description: Agent LP Category (verbatim from Agent BB or derived) }
+        agentClsSource: { type: string, nullable: true, enum: [EXTRACTED, DERIVED, USER_EDITED], description: Provenance of agentCls }
         cls:           { $ref: '#/components/schemas/LPClassification' }
         clsTag:        { type: string, description: CSS tag class e.g. tag-rated }
         # Ratings
@@ -1757,6 +1812,7 @@ components:
       type: object
       description: Partial LP update — any subset of mutable LP fields
       properties:
+        agentCls:   { type: string, description: Agent LP Category; setting it marks agentClsSource as USER_EDITED }
         cls:        { $ref: '#/components/schemas/LPClassification' }
         clsTag:     { type: string, description: CSS tag class e.g. tag-rated }
         abb:        { type: string, description: Agent-submitted borrowing base value }
@@ -1993,7 +2049,9 @@ components:
         id:            { type: integer, description: Sequential row id within this extraction }
         rowIndex:      { type: integer, description: Zero-based row index in the source spreadsheet }
         name:          { type: string }
-        agentClass:    { type: string, nullable: true, description: LP classification as stated by agent }
+        investorType:  { type: string, nullable: true, description: Investor Type as extracted from the schedule }
+        agentClass:    { type: string, nullable: true, description: LP classification as stated by agent, or derived when blank }
+        agentClsSource: { type: string, nullable: true, description: "EXTRACTED — came from the Agent BB file; DERIVED — auto-assigned from Investor Type and profile data; empty — no classification available" }
         commit:        { type: string, nullable: true, description: Formatted capital commitment }
         uncalled:      { type: string, nullable: true, description: Formatted uncalled capital }
         aum:           { type: string, nullable: true, description: Formatted AUM }
@@ -2346,6 +2404,11 @@ components:
         aum:                { $ref: '#/components/schemas/DecimalFieldValue' }
         agentRate:          { $ref: '#/components/schemas/DecimalFieldValue' }
         concentrationLimit: { $ref: '#/components/schemas/DecimalFieldValue' }
+        agentCls:           { $ref: '#/components/schemas/StringFieldValue' }
+        agentClsSource:
+          allOf:
+            - $ref: '#/components/schemas/StringFieldValue'
+          description: Set to EXTRACTED when the agent classification came from the source file
         requiresReview:
           type: boolean
           description: True when any field has confidence < 0.7 or a missing value

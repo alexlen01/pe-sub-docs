@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0 and pe-sub-docs/openapi-extraction.yaml v1.0.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication — stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lps/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0 and pe-sub-docs/openapi-extraction.yaml v1.0.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication — stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lpRecords/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -392,13 +392,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/lps",
+                  "raw": "{{base}}/api/lpRecords",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps"
+                    "lpRecords"
                   ]
                 },
                 "description": "Returns all LPs across all facilities, ordered by investor name."
@@ -422,13 +422,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/lps?facilityId={{facilityId}}",
+                  "raw": "{{base}}/api/lpRecords?facilityId={{facilityId}}",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps"
+                    "lpRecords"
                   ],
                   "query": [
                     {
@@ -458,13 +458,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/lps?facilityId={{facilityId}}&cls=Rated",
+                  "raw": "{{base}}/api/lpRecords?facilityId={{facilityId}}&cls=Rated",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps"
+                    "lpRecords"
                   ],
                   "query": [
                     {
@@ -498,13 +498,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/lps?facilityId={{facilityId}}&search=blackstone",
+                  "raw": "{{base}}/api/lpRecords?facilityId={{facilityId}}&search=blackstone",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps"
+                    "lpRecords"
                   ],
                   "query": [
                     {
@@ -538,13 +538,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/lps/{{lpId}}",
+                  "raw": "{{base}}/api/lpRecords/{{lpId}}",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps",
+                    "lpRecords",
                     "{{lpId}}"
                   ]
                 }
@@ -581,13 +581,13 @@
                   }
                 },
                 "url": {
-                  "raw": "{{base}}/api/lps/{{lpId}}",
+                  "raw": "{{base}}/api/lpRecords/{{lpId}}",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps",
+                    "lpRecords",
                     "{{lpId}}"
                   ]
                 },
@@ -617,7 +617,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"audit\": true,\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"originalName\": \"CalPERS\",\n      \"parent\": \"California Public Employees Retirement System\",\n      \"spv\": false,\n      \"investorType\": \"Pension Fund\",\n      \"instVsHnw\": \"Institutional\",\n      \"region\": \"North America\",\n      \"agentCls\": \"Rated Included\",\n      \"cls\": \"Rated Investor\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"aum\": \"$310.0B\",\n      \"nav\": \"$180.0B\",\n      \"pension\": \"$300.0B\",\n      \"pensionFunded\": \"112%\",\n      \"capCommit\": \"$50.0M\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90,\n      \"agentRatePct\": 65,\n      \"ubsConcLimitPct\": 7.5,\n      \"agentConcLimitPct\": 10,\n      \"notes\": \"Reviewed by credit committee Q2 2026\"\n    },\n    {\n      \"name\": \"Unclassified Investor LP\",\n      \"cls\": \"\",\n      \"inc\": false,\n      \"notes\": \"Classification pending\"\n    }\n  ]\n}",
+                  "raw": "{\n  \"facilityId\": {{facilityId}},\n  \"effectiveDate\": \"2026-06\",\n  \"audit\": true,\n  \"rows\": [\n    {\n      \"name\": \"CalPERS\",\n      \"originalName\": \"CalPERS\",\n      \"parent\": \"California Public Employees Retirement System\",\n      \"spv\": false,\n      \"investorType\": \"Pension Fund\",\n      \"instVsHnw\": \"Institutional\",\n      \"region\": \"North America\",\n      \"agentCls\": \"Rated Included\",\n      \"agentClsSource\": \"EXTRACTED\",\n      \"cls\": \"Rated Investor\",\n      \"sp\": \"AAA\",\n      \"mdy\": \"Aaa\",\n      \"fitch\": \"AAA\",\n      \"aum\": \"$310.0B\",\n      \"nav\": \"$180.0B\",\n      \"pension\": \"$300.0B\",\n      \"pensionFunded\": \"112%\",\n      \"capCommit\": \"$50.0M\",\n      \"inc\": true,\n      \"uc\": \"$20.0M\",\n      \"ubsAdvRatePct\": 90,\n      \"agentRatePct\": 65,\n      \"ubsConcLimitPct\": 7.5,\n      \"agentConcLimitPct\": 10,\n      \"notes\": \"Reviewed by credit committee Q2 2026\"\n    },\n    {\n      \"name\": \"Unclassified Investor LP\",\n      \"cls\": \"\",\n      \"inc\": false,\n      \"notes\": \"Classification pending\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -625,13 +625,13 @@
                   }
                 },
                 "url": {
-                  "raw": "{{base}}/api/lps/classification",
+                  "raw": "{{base}}/api/lpRecords/classification",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps",
+                    "lpRecords",
                     "classification"
                   ]
                 },
@@ -669,13 +669,13 @@
                   }
                 },
                 "url": {
-                  "raw": "{{base}}/api/lps/ingest",
+                  "raw": "{{base}}/api/lpRecords/ingest",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps",
+                    "lpRecords",
                     "ingest"
                   ]
                 },
@@ -700,13 +700,13 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/lps/rates?effective_date=2026-05",
+                  "raw": "{{base}}/api/lpRecords/rates?effective_date=2026-05",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps",
+                    "lpRecords",
                     "rates"
                   ],
                   "query": [
@@ -751,13 +751,13 @@
                   }
                 },
                 "url": {
-                  "raw": "{{base}}/api/lps/rates/batch",
+                  "raw": "{{base}}/api/lpRecords/rates/batch",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
-                    "lps",
+                    "lpRecords",
                     "rates",
                     "batch"
                   ]

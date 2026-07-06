@@ -73,7 +73,7 @@ LP records currently use `investor_name` as the primary identifier for matching.
 
 After an agent BB is ingested and LP figures are written to the LP Master, which fields can a credit officer edit directly (outside of a new submission cycle), and are there any that only the account manager / supervisor can change?
 
-**Known:** `PATCH /api/lps/:id` currently allows editing `cls`, `clsTag`, `abb`, `inc`, `rcl`, `notes`. AUM and ratings are entered manually.
+**Known:** `PATCH /api/lpRecords/:id` currently allows editing `cls`, `clsTag`, `abb`, `inc`, `rcl`, `notes`. AUM and ratings are entered manually.
 
 **Needs confirmation:** Are AUM, ratings (S&P / Moody's / Fitch), and concentration limits also editable at any time by any credit officer, or do changes to financial figures require a new submission / supervisor approval?
 

@@ -15,7 +15,7 @@ info:
     `pe-sub-api` (port 3001) calls `POST /api/extract` with `forward=false` on every upload
     and re-extraction, receives the `ExtractionResult` directly, and persists it. The UI never
     calls this service directly. When `forward=true`, the service instead POSTs the result to
-    `pe-sub-api`'s `/api/lps/ingest` endpoint (standalone testing only).
+    `pe-sub-api`'s `/api/lpRecords/ingest` endpoint (standalone testing only).
 
     Core API spec for `pe-sub-api`: `pe-sub-docs/openapi.yaml`.
   version: 1.0.0
@@ -124,7 +124,7 @@ paths:
                   type: boolean
                   default: true
                   description: >
-                    When true, POST the result to `pe-sub-api/api/lps/ingest`. `pe-sub-api`
+                    When true, POST the result to `pe-sub-api/api/lpRecords/ingest`. `pe-sub-api`
                     always passes `false` and persists the returned result itself.
                 aliasConfig:
                   type: string
