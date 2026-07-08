@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\n────────\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0 and pe-sub-docs/openapi-extraction.yaml v1.0.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication — stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lpRecords/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\nâ”€â”€â”€â”€â”€â”€â”€â”€\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0 and pe-sub-docs/openapi-extraction.yaml v1.0.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication â€” stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lpRecords/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -57,7 +57,7 @@
   "item": [
     {
       "name": "pe-sub-api",
-      "description": "Core REST API — port 3001",
+      "description": "Core REST API â€” port 3001",
       "item": [
         {
           "name": "Health",
@@ -373,6 +373,67 @@
           ]
         },
         {
+          "name": "LP Master",
+          "item": [
+            {
+              "name": "List LP Master",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/lp-master",
+                  "host": [ "{{base}}" ],
+                  "path": [ "api", "lp-master" ]
+                },
+                "description": "Bank-wide LP Master store, ordered by UBS classification then investor name. Distinct from /api/lpRecords (per-facility computed records)."
+              },
+              "response": []
+            },
+            {
+              "name": "Count LP Master",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/count",
+                  "host": [ "{{base}}" ],
+                  "path": [ "api", "lp-master", "count" ]
+                },
+                "description": "Returns { count } — number of LP Master records."
+              },
+              "response": []
+            },
+            {
+              "name": "List investor types",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/investor-types",
+                  "host": [ "{{base}}" ],
+                  "path": [ "api", "lp-master", "investor-types" ]
+                },
+                "description": "Sorted, de-duplicated non-blank investor-type values across the LP Master. New July 2026; populates the investor-type select in the UI. Complements the derive-on-ingest classification (InvestorTypeDeriver)."
+              },
+              "response": []
+            },
+            {
+              "name": "Get LP Master by id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/1",
+                  "host": [ "{{base}}" ],
+                  "path": [ "api", "lp-master", "1" ]
+                },
+                "description": "Single LP Master record by id (404 if absent)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
           "name": "LPs",
           "item": [
             {
@@ -473,8 +534,8 @@
                     },
                     {
                       "key": "cls",
-                      "value": "Rated",
-                      "description": "Rated | Unrated >2bn | Unrated 1-2bn | Eligible | Excluded"
+                      "value": "Rated Investor",
+                      "description": "Rated Investor | Unrated NAV > $1Bn | FoF & Other > $10Bn AUM | Corp Pension > $5Bn Assets | Other Institutional | Excluded"
                     }
                   ]
                 }
@@ -573,7 +634,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"cls\": \"Rated\",\n  \"clsTag\": \"tag-rated\",\n  \"abb\": \"$22.5M\",\n  \"inc\": true,\n  \"rcl\": false,\n  \"notes\": \"Reviewed by credit committee Q2 2026\"\n}",
+                  "raw": "{\n  \"cls\": \"Rated Investor\",\n  \"clsTag\": \"tag-rated\",\n  \"abb\": \"$22.5M\",\n  \"inc\": true,\n  \"rcl\": false,\n  \"notes\": \"Reviewed by credit committee Q2 2026\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -743,7 +804,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"effectiveDate\": \"2026-05\",\n  \"rates\": [\n    {\n      \"lpName\": \"CalPERS\",\n      \"classification\": \"Rated\",\n      \"ubsAdvRatePct\": 0.90,\n      \"ubsConcLimitPct\": 0.075,\n      \"source\": \"BATCH_FEED\"\n    }\n  ]\n}",
+                  "raw": "{\n  \"effectiveDate\": \"2026-05\",\n  \"rates\": [\n    {\n      \"lpName\": \"CalPERS\",\n      \"classification\": \"Rated Investor\",\n      \"ubsAdvRatePct\": 0.90,\n      \"ubsConcLimitPct\": 0.075,\n      \"source\": \"BATCH_FEED\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -762,7 +823,7 @@
                     "batch"
                   ]
                 },
-                "description": "Bulk upsert of lp_rates for one effectiveDate (YYYY-MM). LP lookup is by case-insensitive investor name; unmatched names are skipped. Idempotent. Returns 201 with { saved: <count> }. Rates are decimal fractions 0.0–1.0."
+                "description": "Bulk upsert of lp_rates for one effectiveDate (YYYY-MM). LP lookup is by case-insensitive investor name; unmatched names are skipped. Idempotent. Returns 201 with { saved: <count> }. Rates are decimal fractions 0.0â€“1.0."
               },
               "response": []
             }
@@ -1251,7 +1312,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"overrides\": {\n    \"42\": { \"cls\": \"Rated\", \"agentRate\": \"90%\" }\n  }\n}",
+                  "raw": "{\n  \"overrides\": {\n    \"42\": { \"cls\": \"Rated Investor\", \"agentRate\": \"90%\" }\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1302,7 +1363,7 @@
                     "complete"
                   ]
                 },
-                "description": "Accepts the Shadow BB run: submission → Processed (wizardStep=6), facility → Active with lastRunAt stamped. Idempotent — calling twice is safe. Returns the updated Submission."
+                "description": "Accepts the Shadow BB run: submission â†’ Processed (wizardStep=6), facility â†’ Active with lastRunAt stamped. Idempotent â€” calling twice is safe. Returns the updated Submission."
               },
               "response": []
             },
@@ -1334,7 +1395,7 @@
                     "extracted-lps"
                   ]
                 },
-                "description": "Returns the extracted_lps JSONB from submission_extractions — array of formatted LP rows with per-row confidence scores and computed agentBBFmt/pctBBFmt fields."
+                "description": "Returns the extracted_lps JSONB from submission_extractions â€” array of formatted LP rows with per-row confidence scores and computed agentBBFmt/pctBBFmt fields."
               },
               "response": []
             },
@@ -1366,7 +1427,7 @@
                     "field-map"
                   ]
                 },
-                "description": "Returns an array of { extracted, canonical, group, note, tier } entries — one per recognised column. Used to render the column mapping review table."
+                "description": "Returns an array of { extracted, canonical, group, note, tier } entries â€” one per recognised column. Used to render the column mapping review table."
               },
               "response": []
             },
@@ -1475,7 +1536,7 @@
                     "remap"
                   ]
                 },
-                "description": "Saves a User-tier alias (extractedHeader → canonical) then immediately re-extracts. Returns 200 OK on success. Returns 502 if alias saved but pe-sub-extraction is unreachable — retry with POST /reextract."
+                "description": "Saves a User-tier alias (extractedHeader â†’ canonical) then immediately re-extracts. Returns 200 OK on success. Returns 502 if alias saved but pe-sub-extraction is unreachable â€” retry with POST /reextract."
               },
               "response": []
             },
@@ -1605,7 +1666,7 @@
                     "blocklist"
                   ]
                 },
-                "description": "Qualifier blocklist — terms that disqualify a column header from matching."
+                "description": "Qualifier blocklist â€” terms that disqualify a column header from matching."
               },
               "response": []
             },
@@ -1885,7 +1946,7 @@
                     }
                   ]
                 },
-                "description": "Returns match_queue_entries for the given submission — one row per extracted LP queued for credit officer review."
+                "description": "Returns match_queue_entries for the given submission â€” one row per extracted LP queued for credit officer review."
               },
               "response": []
             },
@@ -1961,7 +2022,7 @@
                     "thresholds"
                   ]
                 },
-                "description": "[PLANNED] Use GET /api/config/matching instead — thresholds are stored under matching_config."
+                "description": "[PLANNED] Use GET /api/config/matching instead â€” thresholds are stored under matching_config."
               },
               "response": []
             },
@@ -2072,7 +2133,7 @@
                     "eligibility"
                   ]
                 },
-                "description": "Returns all 6 eligibility config keys assembled from the DB cache. Response keys are SCREAMING_SNAKE_CASE: BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, GLOBAL_SETTINGS. Returns 404 if no keys seeded."
+                "description": "Returns all eligibility config keys assembled from the DB cache. Response keys are SCREAMING_SNAKE_CASE: BUSA_TIERS, AGENT_TIERS, AGENT_RATE_PARAMS, ELIG_RULES, CONC_LIMITS, CLS_CONC_LIMIT_DEFAULTS, CLS_CONC_LIMIT_BOUNDS, GLOBAL_SETTINGS. Returns 404 if no keys seeded."
               },
               "response": []
             },
@@ -2098,7 +2159,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "[\n  { \"cls\": \"Rated\",          \"rate\": 90 },\n  { \"cls\": \"Unrated >2bn\",   \"rate\": 85 },\n  { \"cls\": \"Unrated 1-2bn\", \"rate\": 80 },\n  { \"cls\": \"Eligible\",      \"rate\": 75 }\n]",
+                  "raw": "[\n  { \"cls\": \"Rated Investor\",              \"rate\": 90 },\n  { \"cls\": \"Unrated NAV > $1Bn\",          \"rate\": 75 },\n  { \"cls\": \"FoF & Other > $10Bn AUM\",     \"rate\": 75 },\n  { \"cls\": \"Corp Pension > $5Bn Assets\",  \"rate\": 65 },\n  { \"cls\": \"Other Institutional\",         \"rate\": 50 }\n]",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2119,11 +2180,42 @@
                     {
                       "key": "section",
                       "value": "busa_tiers",
-                      "description": "Required. Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | global_settings"
+                      "description": "Required. Config key: busa_tiers | agent_tiers | agent_rate_params | elig_rules | conc_limits | cls_conc_limit_defaults | cls_conc_limit_bounds | global_settings"
                     }
                   ]
                 },
                 "description": "Upserts a single config key. The ?section= param appears in the audit log detail. Body is the new JSON value for the key."
+              },
+              "response": []
+            },
+            {
+              "name": "Reload config cache",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/config/reload",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "reload"
+                  ]
+                },
+                "description": "Re-reads the whole config table into the in-memory cache (204). Called by pe-sub-jobs after a config feed (cls-conc-limits-ingest) writes the shared DB directly; without it, feed values only surface on the next restart."
               },
               "response": []
             },
@@ -2236,7 +2328,7 @@
                     "wizard"
                   ]
                 },
-                "description": "Returns the wizard_config JSON from the DB cache. Returns 404 until the wizard_config row is seeded — the UI falls back to its local wizardConfig.ts constants."
+                "description": "Returns the wizard_config JSON from the DB cache. Returns 404 until the wizard_config row is seeded â€” the UI falls back to its local wizardConfig.ts constants."
               },
               "response": []
             },
@@ -2267,7 +2359,7 @@
                     "audit"
                   ]
                 },
-                "description": "Returns the audit_config JSON from the DB cache. Returns 404 until the audit_config row is seeded — the UI falls back to its local auditConfig.ts constants."
+                "description": "Returns the audit_config JSON from the DB cache. Returns 404 until the audit_config row is seeded â€” the UI falls back to its local auditConfig.ts constants."
               },
               "response": []
             },
@@ -2298,7 +2390,7 @@
                     "reports"
                   ]
                 },
-                "description": "Returns the report_config JSON from the DB cache. Returns 404 until the report_config row is seeded — the UI falls back to its local reportConfig.ts constants."
+                "description": "Returns the report_config JSON from the DB cache. Returns 404 until the report_config row is seeded â€” the UI falls back to its local reportConfig.ts constants."
               },
               "response": []
             }
@@ -2404,7 +2496,7 @@
     },
     {
       "name": "pe-sub-extraction",
-      "description": "Document extraction service — port 3002. Called internally by pe-sub-api on every upload and re-extraction. Use this section for direct testing only.",
+      "description": "Document extraction service â€” port 3002. Called internally by pe-sub-api on every upload and re-extraction. Use this section for direct testing only.",
       "item": [
         {
           "name": "Health check",
@@ -2492,7 +2584,7 @@
                   "key": "aliasConfig",
                   "value": "",
                   "type": "text",
-                  "description": "JSON alias map from FM Dictionary — overrides built-in aliases when provided",
+                  "description": "JSON alias map from FM Dictionary â€” overrides built-in aliases when provided",
                   "disabled": true
                 },
                 {

@@ -26,7 +26,7 @@ info:
     Roles: `ANALYST`, `ATM`, `SERVICE`. `POST /lpRecords/ingest` requires `SERVICE`; configuration and
     field-mapping mutations require `ANALYST` — an insufficient role returns `403`. Public routes
     (`/ping`, `/health`, `/notifications/**`) need no identity.
-  version: 0.8.0
+  version: 0.9.0
   contact:
     name: PE Sub Platform Team
 
@@ -42,8 +42,10 @@ security:
 tags:
   - name: facilities
     description: Facility-level records and status management
+  - name: lp-master
+    description: Bank-wide LP Master store — the standardized upstream LP reference shared across facilities
   - name: lpRecords
-    description: LP Master records — identity, ratings, classification, commitment data
+    description: Per-facility LP records — computed eligibility, classification, rate, and BB per facility
   - name: borrowing-base
     description: Shadow BB calculation engine, snapshot history, and summary extensions
   - name: reports
@@ -278,6 +280,78 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  # ── LP Master ────────────────────────────────────────────────────────────────
+
+  /lp-master:
+    get:
+      tags: [lp-master]
+      summary: List all LP Master records
+      description: Bank-wide LP Master store, ordered by UBS classification then investor name.
+      operationId: listLpMaster
+      responses:
+        '200':
+          description: LP Master records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LpMaster'
+
+  /lp-master/count:
+    get:
+      tags: [lp-master]
+      summary: Count of LP Master records
+      operationId: countLpMaster
+      responses:
+        '200':
+          description: Record count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /lp-master/investor-types:
+    get:
+      tags: [lp-master]
+      summary: Distinct investor types present in the LP Master
+      description: >
+        Sorted, de-duplicated list of the non-blank investor-type values across all LP Master
+        records. Used to populate the investor-type filter/select in the UI. New in July 2026;
+        complements the derived-on-ingest investor-type classification (InvestorTypeDeriver).
+      operationId: listLpMasterInvestorTypes
+      responses:
+        '200':
+          description: Distinct investor-type labels
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+              example: ["Endowment", "Family Office", "Fund of Funds", "Insurance Company", "Pension Fund", "Sovereign Wealth Fund"]
+
+  /lp-master/{id}:
+    get:
+      tags: [lp-master]
+      summary: Get one LP Master record
+      operationId: getLpMaster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: LP Master record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LpMaster'
+        '404':
+          description: Not found
 
   # ── LPs ──────────────────────────────────────────────────────────────────────
 
@@ -1524,8 +1598,9 @@ paths:
           description: >
             Eligibility configuration assembled from DB cache. Response keys are
             SCREAMING_SNAKE_CASE: `BUSA_TIERS`, `AGENT_TIERS`, `AGENT_RATE_PARAMS`,
-            `ELIG_RULES`, `CONC_LIMITS`, `GLOBAL_SETTINGS`. Returns 404 if no
-            eligibility keys have been seeded.
+            `ELIG_RULES`, `CONC_LIMITS`, `CLS_CONC_LIMIT_DEFAULTS`,
+            `CLS_CONC_LIMIT_BOUNDS`, `GLOBAL_SETTINGS`.
+            Returns 404 if no eligibility keys have been seeded.
           content:
             application/json:
               schema:
@@ -1542,7 +1617,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [busa_tiers, agent_tiers, agent_rate_params, elig_rules, conc_limits, global_settings]
+            enum: [busa_tiers, agent_tiers, agent_rate_params, elig_rules, conc_limits, cls_conc_limit_defaults, cls_conc_limit_bounds, global_settings]
           description: Config key being updated — stored as-is and used as audit log detail
       requestBody:
         required: true
@@ -1554,6 +1629,20 @@ paths:
       responses:
         '200':
           description: Updated config value echoed back; audit event written
+
+  /config/reload:
+    post:
+      tags: [config]
+      summary: Reload the in-memory config cache from the database
+      description: >
+        Re-reads the whole `config` table into the service's in-memory cache. Called by
+        pe-sub-jobs after a config feed (e.g. `cls-conc-limits-ingest`) writes the shared
+        database directly; without it, feed values would only surface on the next
+        application restart.
+      operationId: reloadConfig
+      responses:
+        '204':
+          description: Cache reloaded
 
   /config/wizard:
     get:
@@ -1721,7 +1810,10 @@ components:
 
     LPClassification:
       type: string
-      enum: [Rated, Unrated >2bn, Unrated 1–2bn, Eligible, Excluded]
+      description: >
+        UBS LP classification. As of July 2026 the UBS and analyst-entered classification
+        vocabularies are unified (CLS_OPTS == UBS_CLS_OPTS in classification_config).
+      enum: [Rated Investor, Unrated NAV > $1Bn, FoF & Other > $10Bn AUM, Corp Pension > $5Bn Assets, Other Institutional, Excluded]
 
     Region:
       type: string
@@ -1771,6 +1863,7 @@ components:
         parent:        { type: string, nullable: true }
         spv:           { type: boolean }
         hq:            { type: boolean }
+        fundSleeve:    { type: string, nullable: true, description: Fund sleeve the LP commits through; each workbook sheet is an independent sleeve }
         type:          { $ref: '#/components/schemas/InvestorType' }
         region:        { $ref: '#/components/schemas/Region' }
         ig:            { type: boolean, description: Investment Grade flag }
@@ -1797,9 +1890,10 @@ components:
         pctCalled:     { type: string, nullable: true }
         # Concentration & BB
         agentConc:     { type: string, nullable: true }
-        ubsConc:       { type: string, nullable: true }
+        ubsConc:       { type: string, nullable: true, description: Per-LP UBS concentration limit as a percent of total uncalled capital e.g. "7.5%" }
         agentRate:     { type: string, nullable: true }
         abb:           { type: string, default: '$0', description: Agent-submitted borrowing base }
+        rank:          { type: integer, nullable: true, description: Uncalled-capital rank within the facility; computed and persisted by the Shadow BB run }
         # Status flags
         inc:           { type: boolean, description: UBS Included flag }
         rcl:           { type: boolean, description: Reclassified flag }
@@ -1807,6 +1901,35 @@ components:
         notes:         { type: string, nullable: true }
         createdAt:     { type: string, format: date-time }
         updatedAt:     { type: string, format: date-time }
+
+    LpMaster:
+      type: object
+      description: >
+        Bank-wide LP Master record — the standardized upstream LP reference shared across
+        facilities. Distinct from LP (a per-facility record). Field names use snake_case for
+        investor_type / inst_vs_hnw / region_location to match the persisted contract.
+      required: [id, name, cls]
+      properties:
+        id:              { type: integer }
+        name:            { type: string }
+        parent:          { type: string, nullable: true }
+        spv:             { type: boolean }
+        hq:              { type: boolean }
+        investor_type:   { type: string, nullable: true, description: Industry/sector profile e.g. "Pension Fund" }
+        inst_vs_hnw:     { type: string, nullable: true }
+        region_location: { type: string, nullable: true }
+        ig:              { type: boolean, description: Investment Grade flag }
+        cls:             { $ref: '#/components/schemas/LPClassification' }
+        sp:              { type: string, default: NR }
+        mdy:             { type: string, default: NR }
+        fitch:           { type: string, default: NR }
+        aum:             { type: string, nullable: true }
+        nav:             { type: string, nullable: true }
+        pension:         { type: string, nullable: true }
+        pensionFunded:   { type: string, nullable: true }
+        rate:            { type: string, nullable: true, description: UBS default advance rate e.g. "90%" }
+        ubsConc:         { type: string, nullable: true, description: UBS default concentration limit percent e.g. "7.5%" }
+        notes:           { type: string, nullable: true }
 
     LPPatch:
       type: object
@@ -1904,7 +2027,7 @@ components:
             deltaM:      { type: number, description: UBS BB minus Agent BB in $M }
             concExcessM: { type: number, description: Uncalled above per-LP cap in $M }
             busaRate:    { type: number, description: BUSA advance rate as decimal e.g. 0.90 }
-            highQuality: { type: boolean, description: Rated / Unrated >2bn / Unrated 1-2bn }
+            highQuality: { type: boolean, description: "true for Rated Investor / Unrated NAV > $1Bn / FoF & Other > $10Bn AUM / Corp Pension > $5Bn Assets" }
             ubb:         { type: string, description: Formatted UBS BB e.g. "$22.5M" }
             delta:       { type: string, description: Formatted delta e.g. "–$3.5M" }
             rate:        { type: string, description: Formatted BUSA rate e.g. "90%" }
@@ -2261,6 +2384,26 @@ components:
         AGENT_RATE_PARAMS: { type: array, items: { type: object, properties: { label: { type: string }, value: { type: string } } } }
         ELIG_RULES:       { type: array, items: { $ref: '#/components/schemas/EligibilityRule' } }
         CONC_LIMITS:      { type: array, items: { type: object, additionalProperties: true } }
+        CLS_CONC_LIMIT_DEFAULTS:
+          type: object
+          additionalProperties: { type: number }
+          description: >
+            Per-LP default concentration limit (percent of total uncalled capital) keyed by
+            LP classification label (both taxonomies). Seeded to the UPPER bound of each
+            class range from Concentration_Limits.xls; Excluded is a hard 0. BB-engine
+            fallback chain: explicit per-LP limit → this class default → facility-level
+            dollar limit.
+        CLS_CONC_LIMIT_BOUNDS:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              min: { type: number }
+              max: { type: number }
+          description: >
+            Accepted concentration-limit range (min/max percent) per LP classification,
+            from the same source workbook. Consumed by the LP record entry form to warn —
+            without blocking — when an analyst enters a limit outside the class norm.
         GLOBAL_SETTINGS:  { type: array, items: { type: object, additionalProperties: true } }
 
     CalcMode:

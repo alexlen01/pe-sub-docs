@@ -43,6 +43,12 @@ Shows the mapping of extracted column headers to canonical LP Master fields. The
 **3c — Extracted LP Data (34 Records)**  
 LP-level table showing extracted values. Clicking a row opens a detail panel showing extracted fields and their canonical mappings. LPs with extraction confidence ≥ 95% are flagged for auto-matching in Step 4.
 
+*Live platform:* the engine also **derives** canonical fields the workbook has no column for —
+Called Capital, % of Capital Commitments, Concentration (%), Excess Concentration (%) — computed
+per fund sleeve from the extracted figures and shown with a `Derived: ` source marker so they read
+as cross-checks, not agent figures (see `EXTRACTION_CONTRACT.md`). Investor Type is auto-derived
+from the investor name at ingestion (`InvestorTypeDeriver`) where the LP Master has none.
+
 ---
 
 ### Step 4 — Review LP Matches
@@ -78,17 +84,17 @@ Read-only summary showing facility, as-of date, agent bank, total LP count, acce
 
 **5b — LP Classification & Rate Assignment (Step 3b–3c)**  
 A scrollable review table shows every LP with:
-- **UBS Classification** — editable dropdown (Rated / Unrated >2bn / Unrated 1–2bn / Eligible / Excluded). Pre-populated from LP Master. Analyst can override per LP.
-- **BUSA Rate** — auto-derived from classification (90/75/65/50/0%). Updates live when classification changes.
+- **UBS Classification** — editable dropdown (Rated Investor / Unrated NAV > $1Bn / FoF & Other > $10Bn AUM / Corp Pension > $5Bn Assets / Other Institutional / Excluded). Pre-populated from LP Master. Analyst can override per LP.
+- **BUSA Rate** — auto-derived from classification (Rated Investor 90% / Unrated NAV > $1Bn 75% / FoF & Other > $10Bn AUM 75% / Corp Pension > $5Bn Assets 65% / Other Institutional 50% / Excluded 0%). Updates live when classification changes.
 - **Agent Rate** — the advance rate the agent assigned to this LP (from the Agent BB submission, read-only, for comparison).
-- **Conc. Limit** — per-LP dollar concentration limit ($M). Defaults to facility-level parameter ($25M). Analyst can adjust per LP.
+- **Conc. Limit** — per-LP concentration limit as a **percent of total uncalled capital**. Defaults by classification from `cls_conc_limit_defaults` (upper bound of the class range); entering a value outside the accepted range (`cls_conc_limit_bounds`) warns without blocking. Analyst can adjust per LP.
 - **Uncalled Capital** — from the Agent BB submission (read-only, for sizing context).
 - **Included** — live preview of whether this LP will be included in the UBS BB given current classification.
 
 Changed rows are highlighted amber. A "Reset overrides" button restores all rows to LP Master defaults. Override count is shown in the action bar.
 
 **5c — Run Shadow BB (Step 3d)**  
-Analyst clicks **Run Shadow BB**. The calculation engine applies the Analyst's classification and CL assignments. Classification overrides apply to this calculation only and do not update LP Master records.
+Analyst clicks **Run Shadow BB**. The calculation engine applies the Analyst's classification and CL assignments. Classification overrides apply to this calculation only and do not update LP Master records. The run also computes each LP's **uncalled-capital rank** within the facility (`lp_rank`) and persists it on the LP records alongside the snapshot.
 
 **5d — Calculation Results**  
 Summary KPIs displayed after calculation completes:
@@ -212,7 +218,7 @@ recent entries are shown).
 | Agent BB downloaded manually from deal sites | Manual file upload (DropZone); Analyst downloads from deal site (SyndTrak, Intralinks, Debt Domain) and uploads to platform |
 | LP classified manually in Excel, one by one | LP Classification & Rate Assignment table (Step 5b) — LP Master defaults pre-populate; Analyst reviews and overrides before running |
 | BUSA rate entered manually per LP | Auto-derived from classification in real time; Analyst can override classification to change rate |
-| Concentration limits entered manually per LP | Per-LP CL editable in Step 5b table; defaults to facility-level parameter ($25M) |
+| Concentration limits entered manually per LP | Per-LP CL editable in Step 5b table as a percent of total uncalled capital; defaults by LP classification (`cls_conc_limit_defaults`), with a warn-only accepted range (`cls_conc_limit_bounds`) |
 | BB calculated in Excel | Calculation engine runs on demand — server-side in `pe-sub-api` (`BbCalculationService`), which persists each run as a snapshot; the UI keeps a mirrored TS engine (`bbCalculationService.ts`) for live preview |
 | Results in shared-folder Excel files | Persisted BB snapshots (PostgreSQL) displayed on the Shadow BB Results screen; exportable to Excel |
 | No breach detection | Four concentration rules checked automatically on every run against the configurable Concentration Limits (Config screen); breach/warning alerts at run time and on the Shadow BB Results screen |

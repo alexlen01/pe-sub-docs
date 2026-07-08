@@ -46,6 +46,29 @@ pe-sub-ui ──(1) POST /api/submissions (multipart)──▶ pe-sub-api
 - **Response** `200` `ExtractionResponse`. `template.version` is **null** here; the recognised
   template name is set by `pe-sub-api` (it owns recognition).
 
+### Post-extraction derivation (`DerivedFieldCalculator`) — July 2026
+After the sparse-row filter (so facility totals sum over real LP rows only), the engine fills
+canonical fields the workbook has **no column for**, computed from the extracted values:
+
+| Canonical field | Formula |
+|---|---|
+| `Called Capital` | `Commitment − Uncalled Capital` |
+| `% of Capital Commitments` | `Commitment / Σ extracted commitments` |
+| `Concentration (%)` | `Uncalled / Σ extracted uncalled` |
+| `Excess Concentration` | `max(0, Uncalled − concentration cap)` |
+| `Excess Concentration (%)` | `Excess Concentration / Σ extracted uncalled` |
+
+- The concentration cap comes from the extracted per-LP `CONCENTRATION_LIMIT`: a percent (or a
+  fraction ≤ 1) is applied to total extracted uncalled; a plain amount > 1 is an absolute dollar cap.
+- Derivation runs **per sheet** — each sheet is an independent fund sleeve, so totals (and therefore
+  percentages) are computed per sleeve.
+- **Agent-supplied columns are never overwritten or back-filled** — a field is derived only when no
+  workbook column mapped to it.
+- Derived values carry the sourceHeader prefix **`Derived: `** and a confidence equal to the minimum
+  confidence of their inputs, so the Review Extraction screen can distinguish computed from
+  agent-reported values. Derived cross-check inputs — **not** agent figures.
+- The engine adds the corresponding `FieldMappingEntry`s for any field it derived.
+
 ---
 
 ## 3. `pe-sub-api` submission lifecycle API
@@ -118,8 +141,8 @@ export interface ExtractedRecord {
 }
 export interface FieldValue {
   readonly value: string | null;
-  readonly confidence: number;               // 0..1
-  readonly sourceHeader: string | null;
+  readonly confidence: number;               // 0..1 (derived: min confidence of inputs)
+  readonly sourceHeader: string | null;      // agent header, or "Derived: <inputs>" for computed fields
 }
 export interface Warning { readonly field: string; readonly message: string; readonly rowIndex: number; }
 export interface FieldMappingEntry {
@@ -252,6 +275,8 @@ Scored against every registry template (highest wins; operator `forceTemplate` o
 - [x] Async upload handoff (202 + bounded executor + polling).
 - [x] Import-driven registry (`BB-Template-Import`, 6 sheets) + Template ID auto-versioning.
 - [x] No hardcoded agent/fund names in code (engine/api/ui purged); Flyway template seeds removed.
+- [x] Post-extraction derivation (`DerivedFieldCalculator`): fills Called Capital, % of Capital
+  Commitments, Concentration (%), Excess Concentration (%) per sleeve; marks values `Derived: `.
 
 **Pending**
 - [ ] Correct the 7 `BB-Template-Import-*.xlsx` cell content (data only) — e.g. `gs-blue-owl` flat list + `Investor Type`/`Fitch`; `kkr-ascendant` agent/`detect_keys`.

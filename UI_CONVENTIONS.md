@@ -21,7 +21,7 @@ Update this file whenever a new marker is introduced or an existing one changes 
 | `active` | Green | Accepted match · Included LP (Y) · Calculation complete (no breaches) |
 | `pending` | Amber | Review match quality band (score 80–94%) |
 | `excl` | Red | No Match band (score < 80%) · Excluded LP · Calculation complete with breaches |
-| _(default)_ | Neutral grey | Classification labels (Rated, Unrated >2bn, Unrated 1–2bn, Eligible, Excluded) |
+| _(default)_ | Neutral grey | Classification labels (Rated Investor, Unrated NAV > $1Bn, FoF & Other > $10Bn AUM, Corp Pension > $5Bn Assets, Other Institutional, Excluded) |
 
 ---
 

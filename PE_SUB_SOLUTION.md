@@ -39,13 +39,16 @@ Availability    = Borrowing Base  –  Current Drawings
 
 **Advance Rate** reflects the credit quality of each LP and how confident the lender is that the LP will honor its commitment if called. Higher quality, higher rate:
 
-| LP Classification | Typical BUSA Advance Rate | Rationale |
+| LP Classification | BUSA Advance Rate | Rationale |
 |---|---|---|
-| Rated (investment-grade) | 90% | S&P/Moody's/Fitch rated; highest payment certainty |
-| Unrated, AUM > $2B | 75% | Large, established institutions; strong track record |
-| Unrated, AUM $1–2B | 65% | Mid-size; creditworthy but less data |
-| Eligible, AUM < $1B | 50% | Smaller investors; higher uncertainty |
+| Rated Investor | 90% | S&P/Moody's/Fitch rated; highest payment certainty |
+| Unrated NAV > $1Bn | 75% | Large unrated investor; NAV above USD 1bn |
+| FoF & Other > $10Bn AUM | 75% | Fund of funds or other investor with AUM above USD 10bn |
+| Corp Pension > $5Bn Assets | 65% | Corporate pension with assets above USD 5bn |
+| Other Institutional | 50% | Other institutional investor; higher uncertainty |
 | Excluded | 0% | Does not meet eligibility criteria; not counted |
+
+*(These are the platform's unified UBS classification tiers as of July 2026; `CLS_OPTS == UBS_CLS_OPTS` in `classification_config`. The agent-side category labels seen as group-header rows in workbooks — Rated / Unrated / Included / Excluded Investors — map into these via `AGENT_CLS_UBS_MAP`.)*
 
 **Concentration Limits** cap how much any single LP can contribute to the borrowing base. A $500M fund with a 10% concentration limit means no LP can contribute more than $50M to availability, even if their unfunded commitment is $200M. This prevents the borrowing base from being dominated by one investor whose default would cause a facility breach.
 
@@ -87,7 +90,7 @@ The LP Grid tab is the primary extraction target. The platform identifies the co
 Different agent banks use different column headers, row structures, and classification schemes for the same underlying data. Key variations:
 
 - **Column naming** — Goldman Sachs uses "Borrowing Base Contribution"; SVB uses "Remaining Callable Capital" for uncalled capital; BNY uses "Individual Unfunded Commitment"
-- **Group-header rows** — Goldman-style workbooks interleave classification headers (Rated Investors, Unrated Investors, Eligible Investors, Excluded Investors) between LP data rows rather than providing a classification column. The extraction engine uses these as sticky context — when a group-header row is encountered, subsequent LP rows inherit its classification until the next header
+- **Group-header rows** — Goldman-style workbooks interleave classification headers (Rated Investors, Unrated Investors, Included Investors, Excluded Investors) between LP data rows rather than providing a classification column. The extraction engine uses these as sticky context — when a group-header row is encountered, subsequent LP rows inherit its classification until the next header
 - **LP Classification column** — Wells Fargo and some other banks provide LP classification as a dedicated column; no group-header rows needed
 - **Summary rows** — SVB workbooks place two summary rows above the column header row; Goldman workbooks place subtotal rows between classification groups. These are identified by keyword matching (Total, Subtotal, Grand Total, etc.) and discarded
 - **Tranche structure** — facilities with Tranche A / Tranche B structures may carry separate advance rate and concentration columns per tranche
@@ -136,7 +139,7 @@ From a **revenue perspective**, sub lines are attractive bank business: short-du
 
 The platform addresses the three highest-friction points in the monthly sub line monitoring cycle:
 
-**1. Extraction** — The agent's Excel arrives in whatever format Goldman Sachs, JPMorgan, or Cadence Bank uses this month. The platform identifies the LP Grid tab, locates the header row, resolves group-header rows (Rated / Unrated / Eligible / Excluded) to LP classifications, skips subtotal rows, and maps each column to a canonical field name via the Field Mapping Dictionary. Derived fields (Borrowing Base Contribution, % of Borrowing Base) are extracted for cross-check but not used as raw inputs.
+**1. Extraction** — The agent's Excel arrives in whatever format Goldman Sachs, JPMorgan, or Cadence Bank uses this month. The platform identifies the LP Grid tab, locates the header row, resolves group-header rows (Rated / Unrated / Included / Excluded) to LP classifications, skips subtotal rows, and maps each column to a canonical field name via the Field Mapping Dictionary. Fields the workbook omits (Called Capital, % of Capital Commitments, Concentration %, Excess Concentration %) are computed per sleeve and marked `Derived:` for cross-check — never treated as agent-reported inputs.
 
 **2. LP Name Matching** — Jaro-Winkler and Levenshtein similarity algorithms score each agent LP name against the LP Master. High-confidence matches (≥95%) are auto-accepted without credit officer intervention. The remaining matches go to a review queue where the CO sees the algorithm's reasoning — which name normalization steps were applied, what the competing candidates scored, why the top match was selected — and accepts or rejects with one click.
 

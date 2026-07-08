@@ -102,7 +102,7 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 | File | Contents |
 |------|----------|
 | `V1_1__schema.sql` | All DDL — `users`, `facilities` (incl. operational metadata: `account_number`, `loan_amount`, `maturity_date`, `collateral_date`, `bank_status`, `bank_status_date`), `lp_records` (incl. `fund_sleeve` and the four precise-money `*_num` columns), `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables (`bb_templates` / `bb_template_tabs` / `bb_template_groups`, slug- and class-keyed) |
-| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers` 5-tier, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`); FM Dictionary — canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), aliases, blocklist, suggestions; LP rates feed (`source='SIMULATED'`). Template registry rows are **not** seeded — templates enter exclusively via `POST /api/bb-templates/import` (`BB-Template-Import-*.xlsx`) |
+| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`; the `classification_config` and per-LP `cls_conc_limit_defaults`/`cls_conc_limit_bounds` are seeded in `V1_3__config.sql`); FM Dictionary — canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), aliases, blocklist, suggestions; LP rates feed (`source='SIMULATED'`). Template registry rows are **not** seeded — templates enter exclusively via `POST /api/bb-templates/import` (`BB-Template-Import-*.xlsx`) |
 | `V1_3__config.sql` | Database-owned UI/domain configuration: `classification_config` (CLS/Agent CLS/UBS CLS option lists, UBS default rates, agent-rate→UBS-tier mapping, Agent→UBS CLS map) and further config keys; `matching_config` regex expansion patch |
 | `V1_4__report_history.sql` | `report_history` table — one row per generated report from the Reports screen; `facility_name` denormalised, `facility_id` soft link (`ON DELETE SET NULL`) |
 
@@ -308,7 +308,7 @@ Platform configuration — advance rates, eligibility rules, concentration limit
 | value | jsonb | JSON array or object; shape varies by key |
 | updated_at | timestamp | Set on upsert |
 
-**Seeded rows (7):** `busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`.
+**Seeded rows:** `busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `cls_conc_limit_defaults`, `cls_conc_limit_bounds`, `global_settings`, `matching_config`, `classification_config`. Config is cached in-memory and hot-reloadable via `POST /api/config/reload`.
 
 **Numeric value conventions:**
 
@@ -916,8 +916,9 @@ that separate sections of LPs. When supplied as section rows, the agent's value 
 onto every LP beneath the header by pe-sub-extraction. The recognised header texts are
 configured per agent bank in `bb_template_groups` and passed to the extraction service as
 `classificationConfig` (built by `ClassificationConfigBuilder`). `UBS LP Classification` is the
-platform-computed internal advance-rate tier (Rated / Unrated >2bn / Unrated 1–2bn / Eligible /
-Excluded), kept separate so the agent label can be cross-checked against the UBS tier.
+platform-computed internal advance-rate tier (Rated Investor / Unrated NAV > $1Bn / FoF & Other
+> $10Bn AUM / Corp Pension > $5Bn Assets / Other Institutional / Excluded), kept separate so the
+agent label can be cross-checked against the UBS tier.
 
 **Path to fully self-service onboarding.** The Field Mapping screen already edits `fm_aliases`
 live. The remaining step is to surface `bb_template_tabs` and `bb_template_groups` in the admin
