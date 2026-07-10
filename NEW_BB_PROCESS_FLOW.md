@@ -84,10 +84,11 @@ Read-only summary showing facility, as-of date, agent bank, total LP count, acce
 
 **5b — LP Classification & Rate Assignment (Step 3b–3c)**  
 A scrollable review table shows every LP with:
-- **UBS Classification** — editable dropdown (Rated Investor / Unrated NAV > $1Bn / FoF & Other > $10Bn AUM / Corp Pension > $5Bn Assets / Other Institutional / Excluded). Pre-populated from LP Master. Analyst can override per LP.
-- **BUSA Rate** — auto-derived from classification (Rated Investor 90% / Unrated NAV > $1Bn 75% / FoF & Other > $10Bn AUM 75% / Corp Pension > $5Bn Assets 65% / Other Institutional 50% / Excluded 0%). Updates live when classification changes.
+- **UBS Classification** — editable dropdown over the 9 UBS LP classifications (Rated Investor / Corp Pension > $5Bn Assets / Corp Pension > $1Bn Assets / Unrated NAV > $1Bn / FoF & Other > $10Bn AUM / Other Institutional / HNW Feeder (acceptable) / HNW (acceptable) / Excluded). Pre-populated from LP Master. Analyst can override per LP.
+- **% Funded** — the LP's Called ÷ Committed ratio (read-only), displayed as "% of LP Called". Drives the advance-rate column via the funded split (below).
+- **BUSA (UBS) Advance Rate** — the suggested default now resolves from the **Borrowing Base Criteria Matrix** (`bb_criteria_matrix`, Concentration_Limits.xlsx tabs 2–3), not a flat per-class schedule. It is a function of **(classification, % Funded)** with a single break at **40% funded**, and — for Rated Investor — of the LP's agency **rating band** (AAA/AA/A/BBB, resolved via the tri-party S&P/Moody's/Fitch middle-rating waterfall). The ≥40%-funded ("mature") defaults are Rated 90% / Corp Pension > $5Bn 90% / Corp Pension > $1Bn 90% / Unrated NAV > $1Bn 90% / FoF & Other 75% / Other Institutional 65% / HNW Feeder 65% / HNW 50% / Excluded 0%; several classes step **down** below 40% funded (Rated BBB 65%, FoF 65%, Other Inst / HNW Feeder 50%, HNW 0%). Updates live when classification, % Funded, or ratings change. Analyst can still override per LP — the override wins over the matrix default.
 - **Agent Rate** — the advance rate the agent assigned to this LP (from the Agent BB submission, read-only, for comparison).
-- **Conc. Limit** — per-LP concentration limit as a **percent of total uncalled capital**. Defaults by classification from `cls_conc_limit_defaults` (upper bound of the class range); entering a value outside the accepted range (`cls_conc_limit_bounds`) warns without blocking. Analyst can adjust per LP.
+- **Conc. Limit** — per-LP concentration limit as a **percent of total uncalled capital**. The suggested default now comes from the same Borrowing Base Criteria Matrix — **rating-band-specific** for Rated Investor (AAA 25% / AA 20% / A 15% / BBB 10%) and a single value per non-rated class (Corp Pension > $5Bn 25% / Corp Pension > $1Bn 20% / Unrated NAV 15% / FoF 10% / Other Inst 5% / HNW Feeder 5% / HNW 1% / Excluded 0%); it is funded-independent. Analyst can adjust per LP. *(The legacy `cls_conc_limit_defaults` / `cls_conc_limit_bounds` keys no longer feed the BB engine — the matrix supersedes them — but still seed and range-check the LP Master record entry form.)*
 - **Uncalled Capital** — from the Agent BB submission (read-only, for sizing context).
 - **Included** — live preview of whether this LP will be included in the UBS BB given current classification.
 
@@ -179,9 +180,13 @@ Configuration screen for name-matching algorithm thresholds (auto-accept ≥ 95,
 
 ### Configuration
 
-Facility-level parameters: advance rate schedules, eligibility rules, concentration limits, and
-global settings. In the live platform these persist in the `config` table (`pe-sub-api`) and are
-edited on the Configuration screen; the **Concentration Limits** card (`conc_limits`) directly
+Facility-level parameters: the Borrowing Base Criteria Matrix, agent advance rate schedule,
+concentration limits, and global settings. In the live platform these persist in the `config`
+table (`pe-sub-api`) and are edited on the Configuration screen. The **Borrowing Base Criteria
+Matrix** card (`bb_criteria_matrix`) is the primary editor for UBS advance rates and per-LP
+concentration limits — rating bands × funded split × classification — and is the source of the
+Run Shadow BB defaults (it replaced the former flat "BUSA Advance Rate Schedule" and "Per-LP
+Concentration Limit Defaults" cards). The **Concentration Limits** card (`conc_limits`) directly
 drives breach detection on every Shadow BB run (see 5e). In the prototype this state was
 in-memory and lost on refresh.
 
@@ -217,8 +222,8 @@ recent entries are shown).
 |---|---|
 | Agent BB downloaded manually from deal sites | Manual file upload (DropZone); Analyst downloads from deal site (SyndTrak, Intralinks, Debt Domain) and uploads to platform |
 | LP classified manually in Excel, one by one | LP Classification & Rate Assignment table (Step 5b) — LP Master defaults pre-populate; Analyst reviews and overrides before running |
-| BUSA rate entered manually per LP | Auto-derived from classification in real time; Analyst can override classification to change rate |
-| Concentration limits entered manually per LP | Per-LP CL editable in Step 5b table as a percent of total uncalled capital; defaults by LP classification (`cls_conc_limit_defaults`), with a warn-only accepted range (`cls_conc_limit_bounds`) |
+| BUSA rate entered manually per LP | Suggested from the Borrowing Base Criteria Matrix by (classification, % funded) and — for Rated Investor — agency rating band; updates live; Analyst can override per LP |
+| Concentration limits entered manually per LP | Per-LP CL editable in Step 5b table as a percent of total uncalled capital; default suggested from the Borrowing Base Criteria Matrix (rating-band-specific for Rated Investor), funded-independent |
 | BB calculated in Excel | Calculation engine runs on demand — server-side in `pe-sub-api` (`BbCalculationService`), which persists each run as a snapshot; the UI keeps a mirrored TS engine (`bbCalculationService.ts`) for live preview |
 | Results in shared-folder Excel files | Persisted BB snapshots (PostgreSQL) displayed on the Shadow BB Results screen; exportable to Excel |
 | No breach detection | Four concentration rules checked automatically on every run against the configurable Concentration Limits (Config screen); breach/warning alerts at run time and on the Shadow BB Results screen |

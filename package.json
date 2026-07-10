@@ -7,7 +7,9 @@
   "scripts": {
     "build:docx": "node scripts/generate-solution-design.mjs",
     "build:docx:v2": "node scripts/generate-solution-design-v2.mjs",
-    "build:guide": "node scripts/generate-user-guide.mjs"
+    "build:docx:v3": "node scripts/generate-solution-design-v3.mjs",
+    "build:guide": "node scripts/generate-user-guide.mjs",
+    "build:guide:v2": "node scripts/generate-user-guide-v2.mjs"
   },
   "devDependencies": {
     "docx": "^9.6.1"

@@ -3,9 +3,10 @@
 // (or directly: node scripts/generate-solution-design-v2.mjs)
 //
 // v2 is the consolidated as-built document (July 2026). It supersedes the v1 docx
-// (June 2026 target-architecture draft) and reconciles: SOLUTION_DESIGN.md,
-// GAP_ANALYSIS.md (as-built section), EXTRACTION_CONTRACT.md, MASTER_DB_MAPPING.md,
-// OPEN_QUESTIONS.md and PE_SUB_SOLUTION.md against the deployed services.
+// (June 2026 target-architecture draft) and reconciles: SOLUTION_DESIGN.md (which now
+// incorporates the former PE_SUB_SOLUTION.md business context), GAP_ANALYSIS.md
+// (as-built section), EXTRACTION_CONTRACT.md, MASTER_DB_MAPPING.md, and
+// OPEN_QUESTIONS.md against the deployed services.
 
 import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,

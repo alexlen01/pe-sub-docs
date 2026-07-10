@@ -1597,9 +1597,9 @@ paths:
         '200':
           description: >
             Eligibility configuration assembled from DB cache. Response keys are
-            SCREAMING_SNAKE_CASE: `BUSA_TIERS`, `AGENT_TIERS`, `AGENT_RATE_PARAMS`,
-            `ELIG_RULES`, `CONC_LIMITS`, `CLS_CONC_LIMIT_DEFAULTS`,
-            `CLS_CONC_LIMIT_BOUNDS`, `GLOBAL_SETTINGS`.
+            SCREAMING_SNAKE_CASE, each present only if its config key is seeded:
+            `BUSA_TIERS`, `AGENT_TIERS`, `CONC_LIMITS`, `CLS_CONC_LIMIT_DEFAULTS`,
+            `CLS_CONC_LIMIT_BOUNDS`, `BB_CRITERIA_MATRIX`, `GLOBAL_SETTINGS`.
             Returns 404 if no eligibility keys have been seeded.
           content:
             application/json:
@@ -1617,7 +1617,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [busa_tiers, agent_tiers, agent_rate_params, elig_rules, conc_limits, cls_conc_limit_defaults, cls_conc_limit_bounds, global_settings]
+            enum: [busa_tiers, agent_tiers, conc_limits, cls_conc_limit_defaults, cls_conc_limit_bounds, bb_criteria_matrix, global_settings]
           description: Config key being updated — stored as-is and used as audit log detail
       requestBody:
         required: true
@@ -1891,6 +1891,7 @@ components:
         # Concentration & BB
         agentConc:     { type: string, nullable: true }
         ubsConc:       { type: string, nullable: true, description: Per-LP UBS concentration limit as a percent of total uncalled capital e.g. "7.5%" }
+        ubsRate:       { type: string, nullable: true, description: Per-LP UBS advance rate percent e.g. "90%" (matrix-resolved default or manual override); persisted so it round-trips to LP Master }
         agentRate:     { type: string, nullable: true }
         abb:           { type: string, default: '$0', description: Agent-submitted borrowing base }
         rank:          { type: integer, nullable: true, description: Uncalled-capital rank within the facility; computed and persisted by the Shadow BB run }
@@ -2381,8 +2382,6 @@ components:
       properties:
         BUSA_TIERS:       { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
         AGENT_TIERS:      { type: array, items: { $ref: '#/components/schemas/EligibilityTier' } }
-        AGENT_RATE_PARAMS: { type: array, items: { type: object, properties: { label: { type: string }, value: { type: string } } } }
-        ELIG_RULES:       { type: array, items: { $ref: '#/components/schemas/EligibilityRule' } }
         CONC_LIMITS:      { type: array, items: { type: object, additionalProperties: true } }
         CLS_CONC_LIMIT_DEFAULTS:
           type: object
@@ -2390,9 +2389,9 @@ components:
           description: >
             Per-LP default concentration limit (percent of total uncalled capital) keyed by
             LP classification label (both taxonomies). Seeded to the UPPER bound of each
-            class range from Concentration_Limits.xls; Excluded is a hard 0. BB-engine
-            fallback chain: explicit per-LP limit → this class default → facility-level
-            dollar limit.
+            class range from Concentration_Limits.xls; Excluded is a hard 0. Superseded for
+            the BB engine by BB_CRITERIA_MATRIX — now consumed only by the LP Master record
+            entry form (default seed + range check).
         CLS_CONC_LIMIT_BOUNDS:
           type: object
           additionalProperties:
@@ -2404,7 +2403,76 @@ components:
             Accepted concentration-limit range (min/max percent) per LP classification,
             from the same source workbook. Consumed by the LP record entry form to warn —
             without blocking — when an analyst enters a limit outside the class norm.
+        BB_CRITERIA_MATRIX: { $ref: '#/components/schemas/BbCriteriaMatrix' }
         GLOBAL_SETTINGS:  { type: array, items: { type: object, additionalProperties: true } }
+
+    BbCriteriaMatrix:
+      type: object
+      description: >
+        Borrowing Base Criteria matrix (Concentration_Limits.xlsx tabs 2-3, `bb_criteria_matrix`
+        config key). Authoritative source of the Run Shadow BB advance-rate and per-LP
+        concentration-limit suggestions. Advance rate splits on the LP's funded % (called ÷
+        commitment) at `fundedThresholdPct`; concentration limit is funded-independent. Rated
+        Investors resolve a rating band via the tri-party "eligible rating" waterfall over
+        S&P/Moody's/Fitch (three → middle/median, two → lower, one → as-is); sub-BBB- clamps to
+        `subInvestmentGradeBand`. See pe-sub-docs/BB_CRITERIA_DESIGN.md.
+      required: [fundedThresholdPct, rated, classes]
+      properties:
+        fundedThresholdPct:
+          type: number
+          example: 40
+          description: Single funded-% break point; LPs at or above use the gte40 advance-rate column
+        ratingBands:
+          type: object
+          description: Agency ratings that resolve to each band (AAA/AA/A/BBB), for Rated Investor CL/AR lookup
+          additionalProperties:
+            type: object
+            properties:
+              sp:     { type: array, items: { type: string } }
+              moodys: { type: array, items: { type: string } }
+              fitch:  { type: array, items: { type: string } }
+        ratingBandSelection: { type: string, example: middle }
+        ratingBandTieBreak:
+          type: object
+          properties:
+            three: { type: string, example: middle }
+            two:   { type: string, example: lower }
+            one:   { type: string, example: asIs }
+        subInvestmentGradeBand:
+          type: string
+          example: BBB
+          description: Band a rated LP clamps to when its rating matches no configured band
+        rated:
+          type: array
+          description: Rated Investor rows, resolved by rating band
+          items: { $ref: '#/components/schemas/BbCriteriaRatedBand' }
+        classes:
+          type: array
+          description: Non-rated classes, resolved by UBS LP classification label
+          items: { $ref: '#/components/schemas/BbCriteriaClass' }
+
+    BbCriteriaAdvanceRate:
+      type: object
+      description: Advance rate (percent) either side of the funded-% break point
+      properties:
+        lt40:  { type: number, example: 65, description: Advance rate % when funded < fundedThresholdPct }
+        gte40: { type: number, example: 90, description: Advance rate % when funded ≥ fundedThresholdPct }
+
+    BbCriteriaRatedBand:
+      type: object
+      properties:
+        band:          { type: string, example: AA }
+        label:         { type: string, example: 'AA+ / Aa1 to AA- / Aa3', description: Verbatim agency rating range from the workbook }
+        concLimitPct:  { type: number, example: 20 }
+        advanceRatePct: { $ref: '#/components/schemas/BbCriteriaAdvanceRate' }
+
+    BbCriteriaClass:
+      type: object
+      properties:
+        cls:           { type: string, example: Other Institutional }
+        category:      { type: string, example: Designated, description: LP Category rollup bucket (Rated / Unrated / Designated / Excluded) }
+        concLimitPct:  { type: number, example: 5 }
+        advanceRatePct: { $ref: '#/components/schemas/BbCriteriaAdvanceRate' }
 
     CalcMode:
       type: object
