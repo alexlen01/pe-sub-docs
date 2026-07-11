@@ -12,7 +12,8 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const SOURCE = join(here, '..', 'PE-Sub-Platform-Solution-Design-v3.md')
+const SOURCE = join(here, '..', 'SOLUTION_DESIGN.md')
+const LOGGING_SOURCE = join(here, '..', 'LOGGING_DESIGN.md')
 const OUTPUT = join(here, '..', 'PE-Sub-Platform-Solution-Design-v3.docx')
 
 const C = {
@@ -156,7 +157,7 @@ function parseMarkdown(markdown) {
   return children
 }
 
-const markdown = readFileSync(SOURCE, 'utf8')
+const markdown = `${readFileSync(SOURCE, 'utf8')}\n\n# Logging & Audit\n\n${readFileSync(LOGGING_SOURCE, 'utf8')}`
 const body = parseMarkdown(markdown)
 
 const cover = [

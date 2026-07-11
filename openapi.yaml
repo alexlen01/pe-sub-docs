@@ -10,7 +10,7 @@ info:
     |---|---|---|
     | `pe-sub-api` | 3001 | Core REST API — LPs, facilities, BB calculation, submissions, audit |
     | `pe-sub-extraction` | 3002 | Document extraction — parses XLSX/CSV agent schedules, posts to `/lpRecords/ingest` |
-    | `pe-sub-jobs` | 3003 | Spring Batch 6 ingestion jobs — CSV upserts (`facility-ingest`, `lp-master-ingest`) into the shared PostgreSQL |
+    | `pe-sub-jobs` | 3003 | Spring Batch 6 ingestion jobs — DB-less; parses feed CSVs and posts them to this API's SERVICE-gated ingest/seed endpoints |
 
     This spec covers `pe-sub-api` (Spring Boot 4.1 / Java 25). The extraction service
     (`pe-sub-extraction`, port 3002) is documented separately in `pe-sub-docs/openapi-extraction.yaml`.
@@ -23,7 +23,9 @@ info:
     **Authentication** — stateless, header-based. In `gateway` mode (production, behind UBS SSO)
     every request must carry `X-Auth-User` and `X-Auth-Roles`; a missing user header returns `401`.
     In `dev` mode (default local) a fixed dev identity is injected so no headers are required.
-    Roles: `ANALYST`, `ATM`, `SERVICE`. `POST /lpRecords/ingest` requires `SERVICE`; configuration and
+    Roles: `ANALYST`, `ATM`, `SERVICE`. Service-to-service endpoints require `SERVICE`
+    (`POST /lpRecords/ingest`, `POST /lpRecords/seed`, `POST /facilities/ingest`,
+    `POST /lp-master/ingest`, `PATCH /config/cls-conc-limit-defaults`); configuration and
     field-mapping mutations require `ANALYST` — an insufficient role returns `403`. Public routes
     (`/ping`, `/health`, `/notifications/**`) need no identity.
   version: 0.9.0
@@ -151,6 +153,48 @@ paths:
                 $ref: '#/components/schemas/Facility'
         '409':
           description: Facility name already exists
+
+  /facilities/ingest:
+    post:
+      tags: [facilities, jobs]
+      summary: Bulk upsert facilities from the pe-sub-jobs feed (SERVICE role)
+      description: >
+        Called by `pe-sub-jobs` with the Agent Bank Summary CSV rows, upserted by facility
+        `name`. New facilities get the platform defaults (status "Not Started", $25M conc
+        limit); existing ones have their agent-reported fields overwritten in place —
+        including with nulls (feed replace semantics) — while platform-owned fields
+        (status, concLimitM, facilitySize, lastRunAt) are never touched. Rows without a
+        name or agent bank are counted as skipped.
+      operationId: ingestFacilities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:             { type: string }
+                  agentBank:        { type: string }
+                  accountNumber:    { type: string, nullable: true }
+                  loanAmount:       { type: number, nullable: true }
+                  maturityDate:     { type: string, format: date, nullable: true }
+                  bankStatus:       { type: string, nullable: true }
+                  bankStatusDate:   { type: string, format: date, nullable: true }
+                  ubsParticipation: { type: number, nullable: true }
+                  collateralDate:   { type: string, format: date, nullable: true }
+      responses:
+        '200':
+          description: Ingest summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created: { type: integer }
+                  updated: { type: integer }
+                  skipped: { type: integer }
 
   /facilities/{id}:
     get:
@@ -298,6 +342,57 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/LpMaster'
+
+  /lp-master/ingest:
+    post:
+      tags: [lp-master, jobs]
+      summary: Bulk upsert LP Master profiles from the pe-sub-jobs feed (SERVICE role)
+      description: >
+        Called by `pe-sub-jobs` with the analyst-compiled LP Master CSV rows, upserted by
+        `investorName`. The feed is the authoritative source for the whole profile —
+        identity, classification, ratings, financial scale, and the UBS credit-profile
+        defaults — so every field is overwritten (including with nulls) on update. Rows
+        without an investor name are counted as skipped.
+      operationId: ingestLpMaster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  investorName:        { type: string }
+                  parent:              { type: string, nullable: true }
+                  spv:                 { type: boolean }
+                  highQty:             { type: boolean }
+                  investorType:        { type: string, nullable: true }
+                  instVsHnw:           { type: string, nullable: true }
+                  regionLocation:      { type: string, nullable: true }
+                  investmentGrade:     { type: boolean }
+                  sp:                  { type: string }
+                  mdy:                 { type: string }
+                  fitch:               { type: string }
+                  aum:                 { type: string, nullable: true }
+                  nav:                 { type: string, nullable: true }
+                  pension:             { type: string, nullable: true }
+                  pensionFunded:       { type: string, nullable: true }
+                  ubsClassification:   { type: string, nullable: true }
+                  ubsDefaultAdvRate:   { type: string, nullable: true }
+                  ubsDefaultConcLimit: { type: string, nullable: true }
+                  notes:               { type: string, nullable: true }
+      responses:
+        '200':
+          description: Ingest summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created: { type: integer }
+                  updated: { type: integer }
+                  skipped: { type: integer }
 
   /lp-master/count:
     get:
@@ -567,6 +662,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IngestResult'
+
+  /lpRecords/seed:
+    post:
+      tags: [lpRecords, jobs]
+      summary: Seed facility LP records from the pe-sub-jobs feed (SERVICE role)
+      description: >
+        Called by `pe-sub-jobs` on startup with the lp_facility_seeds CSV rows. The API
+        resolves the facility and LP Master references by name, merges the LP Master profile
+        (identity, ratings, financial scale) onto the new record, and normalizes the agent /
+        UBS classifications. `lp_records` deliberately has no unique constraint on
+        (facility, investor) — the same investor may appear across sleeves — so idempotency is
+        application-level: pairs that already have a record are skipped, never overwritten.
+        Rows whose facility or LP Master cannot be resolved are skipped.
+      operationId: seedLpRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  facilityName: { type: string }
+                  investorName: { type: string }
+                  capCommit:    { type: string, example: "$250M" }
+                  uncalled:     { type: string, example: "$75M" }
+                  agentCls:     { type: string, example: "Rated Included" }
+                  agentRate:    { type: string, example: "90%" }
+                  agentConc:    { type: string, example: "5%" }
+      responses:
+        '200':
+          description: Seed summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created: { type: integer }
+                  updated: { type: integer, description: Always 0 — existing pairs are skipped, not updated }
+                  skipped: { type: integer }
 
   /lpRecords/rates:
     get:
@@ -1679,15 +1815,47 @@ paths:
         '200':
           description: Updated config value echoed back; audit event written
 
+  /config/cls-conc-limit-defaults:
+    patch:
+      tags: [config, jobs]
+      summary: Merge per-classification default concentration limits (SERVICE role)
+      description: >
+        Called by `pe-sub-jobs`' cls-conc-limits feed. Merges the fed classes into the
+        `cls_conc_limit_defaults` config map (percent of total uncalled capital per LP
+        classification): fed classes overwrite their entries, unmentioned classes are
+        preserved. Persists and refreshes the in-memory cache in one step — no follow-up
+        `/config/reload` is needed. Operators edit the same map via
+        `PUT /config/eligibility?section=cls_conc_limit_defaults` instead.
+      operationId: mergeClsConcLimitDefaults
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: { type: number }
+            example:
+              Rated Investor: 20.0
+              Unrated NAV > $1Bn: 15.0
+      responses:
+        '200':
+          description: The full merged defaults map
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: number }
+        '400':
+          description: Empty body — nothing to merge
+
   /config/reload:
     post:
       tags: [config]
       summary: Reload the in-memory config cache from the database
       description: >
-        Re-reads the whole `config` table into the service's in-memory cache. Called by
-        pe-sub-jobs after a config feed (e.g. `cls-conc-limits-ingest`) writes the shared
-        database directly; without it, feed values would only surface on the next
-        application restart.
+        Re-reads the whole `config` table into the service's in-memory cache — a recovery
+        hook for out-of-band changes to the `config` table. (The pe-sub-jobs config feed no
+        longer needs it: `PATCH /config/cls-conc-limit-defaults` refreshes the cache itself.)
       operationId: reloadConfig
       responses:
         '204':
