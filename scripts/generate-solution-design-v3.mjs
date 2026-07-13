@@ -167,7 +167,7 @@ const cover = [
   makeTable([
     ['Document attribute', 'Value'],
     ['Version', '3.0'],
-    ['Date', '10 July 2026'],
+    ['Date', '12 July 2026'],
     ['Status', 'Consolidated Technical Design'],
     ['Classification', 'UBS Confidential'],
     ['Audience', 'Lending Technology · PE Subscription Finance · Credit Risk · Operations · Architecture · Security'],

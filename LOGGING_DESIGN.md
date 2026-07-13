@@ -36,6 +36,11 @@ Every JSON line contains the logger-provided `timestamp`, `level`, `service`, `c
 
 The API returns the correlation ID in `X-Correlation-Id` and sends it to pe-sub-extraction. Legacy `X-Transaction-Id` is accepted during migration and mirrored in the response.
 
+### Current implementation note (2026-07)
+
+- Report endpoints currently stamp MDC with `reportRequestId` (UUID) in `ReportController` for request-level correlation in report flows.
+- This is intentionally scoped to reports for now; migration to shared middleware-backed `correlation_id` across all APIs remains the target state described in Section 6.
+
 ## 4. Event catalog and severity
 
 | Stage | Required operational events | Level |
@@ -47,6 +52,7 @@ The API returns the correlation ID in `X-Correlation-Id` and sends it to pe-sub-
 | Shadow BB | `shadow_bb.completed`, `shadow_bb.variance`, `shadow_bb.overridden`; aggregate inputs, outputs, thresholds, variance and approval reason | INFO/WARN plus durable audit for override |
 | Settlement | `lp_master.committed`; inserted/updated/transaction counts and activation timestamp | INFO plus durable audit |
 | Admin/export | `config.changed`, `template.changed`, `dictionary.changed`, `report.exported`; object IDs, old/new values where approved, filters, format, row count | INFO/WARN plus durable audit |
+| Reports (implemented) | `collateral_pdf_request`, `collateral_pdf_success`, `collateral_pdf_render_start`, `collateral_pdf_render_success`, `collateral_pdf_render_failure`, `collateral_report_selected_snapshot`, `collateral_report_summary_fallback`, `collateral_report_ready`, `collateral_pdf_trend_filtered`, `ear_request`, `agent_bank_exposure_request`, `concentration_request`, `report_history_list_request`, `report_history_create_request`; facility/snapshot IDs, selected options, counts, trend-filter metrics, render bytes | Request/summary INFO; degraded data WARN; render failure ERROR |
 
 Do not use WARN for normal retryable flow merely to attract attention. ERROR means an operation failed and normally includes `error_type`, safe `error_message`, and whether retry is possible.
 
@@ -67,6 +73,12 @@ Audit writes for successful business mutations occur in the same database transa
 ## 7. Failure handling and validation
 
 Logging failure must not fail the business operation, except a required durable audit write: if the audit record cannot commit with a regulated mutation, the mutation fails atomically. JSON schema smoke tests verify required envelope keys and valid one-line JSON. Integration tests verify header generation/echo, propagation to extraction, MDC cleanup, redaction, actor attribution, old/new audit values, and audit preservation.
+
+Report runtime hardening now also includes:
+
+- Defensive fallback when a snapshot has missing `result` or `summary` during collateral report assembly.
+- Filtering malformed historical trend snapshots (`result`/`summary` missing) before PDF template rendering, with WARN telemetry including skipped counts.
+- Regression coverage ensuring collateral PDF generation tolerates incomplete historical snapshot payloads.
 
 ## 8. Rollout
 

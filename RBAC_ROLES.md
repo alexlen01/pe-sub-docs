@@ -29,6 +29,10 @@ Day-to-day operator. Analysts upload Agent BBs, review extraction, resolve LP ma
 
 Operational owner and independent review authority. Managers may act on any submission, accept or reject a completed Shadow BB, reassign workflow ownership, perform documented overrides, and review the complete audit trail. Managers have read-only access to Analyst-maintained configuration.
 
+### `APP_VIEWER` — IT / Read-Only
+
+Non-operational oversight and IT support. A Viewer may read and **download/export** any application data — facilities, submissions, LP Master, Shadow BB inputs/results, configuration, templates, and accepted reports — but may **not** create, edit, delete, or upload anything. It holds no operator capability: no upload, no extraction/match changes, no Shadow BB run, no accept/reject, no configuration edit. Enforced server-side by denying every mutating verb (`POST`/`PUT`/`PATCH`/`DELETE`) under `/api` to this role while leaving `GET` open. The in-code Spring role token is `VIEWER`; the Intra ID App Role is `APP_VIEWER`.
+
 Human-readable role labels are presentation values only. Authorization code, tests, policy, and operational documentation use the canonical App Role values.
 
 ## Permission matrix
@@ -136,7 +140,7 @@ AACM onboarding registers the application Security Principal, redirect URIs, API
 The current implementation is not compliant with this target:
 
 - API authentication uses a fixed dev identity or trusted headers instead of validated Intra ID JWTs.
-- Existing roles are `ANALYST`, `ATM`, and `SERVICE`, not canonical App Roles.
+- Existing roles are `ANALYST`, `MANAGER`, and `SERVICE`, not canonical App Roles.
 - Most state-changing endpoints require only an authenticated identity.
 - Submission ownership is neither populated from authentication nor enforced server-side.
 - Reassignment, reasoned override, and independent accept/reject controls are missing.

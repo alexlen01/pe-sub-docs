@@ -157,7 +157,7 @@ const execSummary = [
   bullet('End-to-end ingestion: multipart upload → async extraction (Apache POI) → template recognition → field mapping via the live Field Mapping Dictionary → LP name matching → credit-officer review wizard'),
   bullet('Shadow BB calculation engine (Java, authoritative; TypeScript twin for live preview) with five-tier BUSA advance rates, per-LP concentration caps, breach detection, and append-only JSONB snapshots'),
   bullet('Precise money handling: exact-dollar NUMERIC columns dual-written with display strings; the engine computes from exact values, not re-parsed labels'),
-  bullet('Header/gateway security: dev and gateway modes, ANALYST / ATM / SERVICE roles, service-only ingest, analyst-only configuration surfaces; audit trail records the authenticated principal'),
+  bullet('Header/gateway security: dev and gateway modes, ANALYST / MANAGER / SERVICE roles, service-only ingest, analyst-only configuration surfaces; audit trail records the authenticated principal'),
   bullet('Import-driven BB template registry (three template classes; no hardcoded agent names anywhere in code), multi-tab and feeder-sleeve support'),
   bullet('Self-service configuration: advance rates, eligibility rules, concentration limits, matching thresholds and field-mapping aliases are all DB-backed and editable at runtime with audit logging'),
   bullet('OpenAPI 3.0 specification v0.8.0 (with security schemes) and a maintained Postman/Talend collection'),
@@ -292,7 +292,7 @@ const apiSecurity = [
       ['OPTIONS, /api/ping, /health, actuator health, /api/notifications/** (SSE)', 'Public — preflight carries no identity; EventSource cannot send headers'],
       ['POST /api/lps/ingest', 'SERVICE only — service-to-service, never user-facing'],
       ['PUT /api/config/**, field-mapping mutations, /api/bb-templates/**', 'ANALYST only — per the RBAC matrix, the Account/Transaction Manager does not configure'],
-      ['All other /api/**', 'Any authenticated operator (ANALYST or ATM)'],
+      ['All other /api/**', 'Any authenticated operator (ANALYST or MANAGER)'],
     ]
   ),
   bullet('Unauthenticated requests receive 401; authenticated-but-unauthorised receive 403'),
@@ -439,7 +439,7 @@ const appendix = [
       ['Fund sleeve', 'Source-tab provenance for LPs extracted from multi-tab / feeder workbooks'],
       ['Snapshot', 'Immutable JSONB record of one Shadow BB run (LPs, summary, breaches)'],
       ['FM Dictionary', 'Field Mapping Dictionary — canonical fields plus bank-scoped column-header aliases driving extraction'],
-      ['ATM', 'Account/Transaction Manager — the review-authority role (4-eye check)'],
+      ['MANAGER', 'Account/Transaction Manager — the review-authority role (4-eye check)'],
     ]
   ),
 ]

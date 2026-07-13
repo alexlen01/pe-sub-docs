@@ -51,7 +51,7 @@
     {
       "key": "authRoles",
       "value": "ANALYST",
-      "description": "X-Auth-Roles value for gateway mode (ANALYST and/or ATM; ingest uses SERVICE)."
+      "description": "X-Auth-Roles value for gateway mode (ANALYST and/or MANAGER; ingest uses SERVICE)."
     }
   ],
   "item": [
@@ -117,7 +117,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -147,7 +147,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -181,7 +181,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -223,7 +223,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -267,7 +267,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -311,7 +311,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -352,7 +352,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -449,7 +449,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -479,7 +479,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -515,7 +515,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -555,7 +555,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -595,7 +595,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -629,7 +629,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -673,7 +673,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -717,7 +717,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "SERVICE",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -757,7 +757,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -799,7 +799,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -845,7 +845,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -877,7 +877,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -909,7 +909,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -941,7 +941,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -978,7 +978,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1010,7 +1010,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1042,7 +1042,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1079,7 +1079,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1109,7 +1109,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1144,7 +1144,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1209,7 +1209,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1239,7 +1239,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1271,7 +1271,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1307,7 +1307,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1348,7 +1348,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1380,7 +1380,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1412,7 +1412,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1444,7 +1444,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1476,7 +1476,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1512,7 +1512,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1553,7 +1553,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1590,7 +1590,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1621,7 +1621,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1652,7 +1652,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1683,7 +1683,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1717,7 +1717,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1760,7 +1760,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1804,7 +1804,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1845,7 +1845,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1885,7 +1885,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -1925,7 +1925,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -1967,7 +1967,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -2008,7 +2008,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2043,7 +2043,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -2088,7 +2088,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2119,7 +2119,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2154,7 +2154,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -2201,7 +2201,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2232,7 +2232,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2267,7 +2267,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "body": {
@@ -2314,7 +2314,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2345,7 +2345,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2376,7 +2376,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2412,7 +2412,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {
@@ -2442,7 +2442,7 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, ATM, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
                   }
                 ],
                 "url": {

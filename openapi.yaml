@@ -23,7 +23,7 @@ info:
     **Authentication** — stateless, header-based. In `gateway` mode (production, behind UBS SSO)
     every request must carry `X-Auth-User` and `X-Auth-Roles`; a missing user header returns `401`.
     In `dev` mode (default local) a fixed dev identity is injected so no headers are required.
-    Roles: `ANALYST`, `ATM`, `SERVICE`. Service-to-service endpoints require `SERVICE`
+    Roles: `ANALYST`, `MANAGER`, `SERVICE`. Service-to-service endpoints require `SERVICE`
     (`POST /lpRecords/ingest`, `POST /lpRecords/seed`, `POST /facilities/ingest`,
     `POST /lp-master/ingest`, `PATCH /config/cls-conc-limit-defaults`); configuration and
     field-mapping mutations require `ANALYST` — an insufficient role returns `403`. Public routes
@@ -447,6 +447,25 @@ paths:
                 $ref: '#/components/schemas/LpMaster'
         '404':
           description: Not found
+    delete:
+      tags: [lp-master]
+      summary: Hard-delete an LP Master row (manual correction path)
+      description: >
+        Removes an erroneously ingested bank-wide LP Master row. Facility LP records that
+        reference it are detached (lp_master_id nulled), never deleted. Audited as
+        "LP Master Deleted". ANALYST-gated. Note: if the investor still exists in a facility's
+        LP records, the next accepted Shadow BB cycle's write-back re-creates a master row.
+      operationId: deleteLpMaster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Not found
 
   # ── LPs ──────────────────────────────────────────────────────────────────────
 
@@ -516,6 +535,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LP'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [lpRecords]
+      summary: Hard-delete a facility LP record (manual correction path)
+      description: >
+        Removes a row that slipped through extraction review. Match-queue entries pointing at
+        the record are detached (decision history kept), lp_rates rows cascade, and the
+        facility's ranks are recomputed over the remaining LPs in the same transaction. The
+        current BB snapshot is untouched — totals refresh on the next Run / Re-run Shadow BB.
+        Audited as "LP Record Deleted".
+      operationId: deleteLP
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Deleted; remaining ranks recomputed
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1980,7 +2016,7 @@ components:
       type: apiKey
       in: header
       name: X-Auth-Roles
-      description: Comma-separated roles, e.g. "ANALYST,ATM" (gateway mode).
+      description: Comma-separated roles, e.g. "ANALYST,MANAGER" (gateway mode).
 
   # ── Parameters ───────────────────────────────────────────────────────────────
 
@@ -2261,7 +2297,7 @@ components:
 
     ReportHistoryEntry:
       type: object
-      description: One generated report (report_history table, V1_4__report_history.sql)
+      description: One generated report (report_history table, consolidated V1_1__schema.sql)
       properties:
         id:            { type: integer }
         report:        { type: string }
