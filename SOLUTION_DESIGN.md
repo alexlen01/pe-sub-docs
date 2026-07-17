@@ -300,6 +300,67 @@ Note: `rate` (BUSA advance rate) and computed fields (`ubb`, `delta`, `uec`) are
 
 **Precise money columns (dual-write).** Four money fields carry a `NUMERIC(20,2)` companion column holding exact absolute dollars alongside the formatted display string: `uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num`. Write paths keep both in sync — extraction ingest persists the exact extracted decimal plus the rounded display string (`"$12.3M"`); a Shadow BB commit re-derives the numerics from the committed strings and clears stale values. The BB engine computes from the numeric column when present and falls back to parsing the display string otherwise, so calculations are exact-dollar rather than re-parsed from rounded labels. The `*_num` columns are internal — never exposed on a DTO (resolves former Gap G10 for calculation purposes).
 
+### Reference Extract — `LP DB Export 2026.06.25.xlsx`
+
+A flat export of the live LP-per-facility borrowing-base records, used as the **shape-of-data
+reference** for `lp_records` (joined to `facilities`). Single sheet `_BBs20260625`,
+**20,000 LP rows × 32 columns**, spanning **65 facilities** (`AccountID`) across **64 funds**
+(`FndName`). One row = one LP, on one facility, as of one BB date.
+
+> **Representative, not production truth.** The categorical columns are near-uniformly
+> distributed (≈4,000 rows per Classification, ≈4,000 per Region), which is characteristic of a
+> generated dataset. Treat it as an authoritative guide to **column set, value conventions, and
+> formatting variance** — not as reconciled portfolio figures.
+
+**Column → schema mapping (32 columns):**
+
+| # | Export column | Maps to | Observed values / convention |
+|---|---|---|---|
+| 1 | `AccountID` | `facilities.account_number` | UBS loan reference, e.g. `5VZ9001`, `5VX1796` |
+| 2 | `FndName` | `facilities.name` | Fund name; **umbrella facilities** bundle sub-funds with a `[U]` marker and comma-joined names — e.g. `CD&R X, VI, XII [U]`, `HIG LBO IV, BH III, GB&E III, IV [U]`, `Carlyle Buyout Umbrella` |
+| 3 | `InvestorName` | `lp_records.investor_name` | |
+| 4 | `Parent` | `parent` | |
+| 5 | `SPV` | `spv` | `Y` / `N` |
+| 6 | `InvestorType` | `investor_type` | 9 values: Other Institutional Investors, Sovereign Wealth Fund, Foundation, Insurance Company, Public Pension, Family Office, Corporate Pension, FOF & Other Asset Manager, Endowment |
+| 7 | `Region` | `region_location` | Latin America, North America, Europe, Middle East, Asia Pacific |
+| 8 | `HQ` | `high_qty` | `Yes` / `No` |
+| 9 | `InstitutionalHNW` | `inst_vs_hnw` | Institutional (17,998) / HNW (2,002) |
+| 10 | `InvestmentGrade` | `investment_grade` (`ig`) | `Yes` / `No` |
+| 11 | `Classification` | `agent_cls` (Agent LP Category) | 5 agent categories: Rated Included Investors, Non-Rated Included Investors, Included Investors, Fund-Of-Fund Designated Investors, Ineligible Investors |
+| 12 | `Notes` | `notes` | Often blank |
+| 13–15 | `SP` / `Moodys` / `Fitch` | `sp` / `mdy` / `fitch` | Agency letter grades incl. `NR` (not rated) |
+| 16 | `AUM` | `aum` | **Free-text strings, inconsistent units** — `$700Mn`, `$4.8 bn`, blank |
+| 17 | `NAV` | `nav` | Same string variance as AUM |
+| 18 | `PensionAssets` | `pension` | e.g. `2T` |
+| 19 | `FundingRatio` | `pension_funded` (funded ratio) | Decimal, e.g. `1.9` |
+| 20 | `UBSAR` | `ubs_rate` (UBS Advance Rate) | **Decimal fraction** `0.41` = 41% (note: DTO carries `"90%"` strings; config carries whole-number `90`) |
+| 21 | `AgentAR` | `agent_rate` | Decimal fraction |
+| 22 | `Commitments` | `cap_commit` / `cap_commit_num` | **Raw absolute dollars** `484000000` |
+| 23 | `PercentOfCommitments` | `pct_cap_commit` | Decimal fraction `0.09` |
+| 24 | `Called` | `called_cap` | Raw absolute dollars |
+| 25 | `Uncalled` | `uncalled_capital` / `uncalled_capital_num` | Raw absolute dollars |
+| 26 | `PercentOfUncalled` | `pct_uncalled` | Decimal fraction |
+| 27 | `CalledPercent` | `pct_called` | Decimal fraction |
+| 28 | `AgentCL` | `agent_conc` | Concentration limit as decimal fraction `0.14` |
+| 29 | `UBSCL` | `ubs_conc` | Concentration limit as decimal fraction |
+| 30 | `AgentBB` | `agent_bb` (`abb`) / `agent_bb_num` | Raw absolute dollars |
+| 31 | `UBSBB` | `ubs_bb` (`ubb`) | Raw absolute dollars |
+| 32 | `BBDate` | snapshot / collateral as-of date | US-format string `M/D/YYYY`, varies per facility (e.g. `4/30/2026`, `11/26/2025`) |
+
+**Conventions worth pinning down at ingest:**
+
+- **Advance rates and concentration limits arrive as decimal fractions** here (`0.41`, `0.14`),
+  which is a third representation alongside the DTO's `"90%"` strings and config's whole-number
+  `90`. Any importer of this export must normalise fraction → the platform's stored form.
+- **`AUM` / `NAV` / `PensionAssets` are unnormalised free text** with mixed units
+  (`$700Mn`, `$4.8 bn`, `2T`) — direct evidence for the display-string-plus-`*_num`-companion
+  design and the extraction normalisation burden.
+- **Umbrella facilities** (`[U]`) confirm that one `AccountID` can span multiple sub-funds —
+  relevant to the multi-fund dedup open question (§8) and to the segmentation proposal below.
+- **No `Committed` / `Uncommitted` column and no `Tranche` column exist in the export.** The
+  structural-segmentation attributes proposed in "Proposed Change — LP Structural Segmentation"
+  are therefore **net-new analyst-applied metadata**, not fields recoverable from this feed.
+
 ### `lp_rates`
 
 LP rates feed — one row per LP per effective period. Populated by the monthly batch ingestion process; `LpRateService.findLatestAsOf(lpId, asOf)` returns the most recent row on or before the submission date for use in the Shadow BB calculation. Seeded with simulated rates (`source = 'SIMULATED'`, effective 2025-01-01) so test submissions have rates from day one.
@@ -1027,6 +1088,9 @@ The following fields were required in the `lp_records` table to support the full
 | G17 | ~~**`lp_records.recallable_dist` field does not exist**~~ ✅ **Resolved** | `recallable_dist VARCHAR(50)` exists in `V1_1__schema.sql` | BB engine update for SVB facilities still needed (Decision 38) |
 | G18 | **Apache POI colour extraction not implemented in `pe-sub-extraction`** | Wells Fargo Variant 1 (Class A) row colour codes (Reclassified / Transferee) are silently ignored | Requires `XSSFCellStyle.getFillForegroundColorColor()` check per row in the Class A extraction path (Decision 36) |
 | G19 | ~~**`bb_templates` registry has no `template_class` column`**~~ ✅ **Resolved** | `template_class VARCHAR(10) NOT NULL DEFAULT 'A'` exists in `V1_1__schema.sql` | — |
+| G20 | **No persisted Committed/Uncommitted or Tranche attribute on `lp_records`** *(proposal)* | Analysts cannot identify, filter, group, or subtotal LP records by lender-obligation status or tranche; the Tranche A/B signal detected during Class A extraction (Decisions 43/45) is transient and discarded after parsing | Resolved by Phase 1 of "Proposed Change — LP Structural Segmentation": two `NOT NULL DEFAULT ''` columns (`commitment_status`, `tranche`), config-driven option lists/tag maps, single + bulk write endpoints, filter params. Calc-neutral — no BB engine impact |
+| G21 | **No facility-level tranche sizing / coverage reporting** *(proposal)* | Cannot report per-tranche utilisation or coverage; committed vs uncommitted envelopes are not modelled | Resolved by Phase 2 design sketch: `facility_tranches` child table (committed/uncommitted amounts per tranche) + `/api/facilities/{id}/tranches`. Reporting-only aggregation; single-facility BB unit preserved |
+| G22 | **Import path cannot populate segmentation from source feeds** *(proposal)* | The LP DB Export (§4) and current Agent BB templates carry no Committed/Uncommitted or Tranche column, so Phase 1 values are analyst-entered only; no bulk seed source exists | Open until a source feed (Agent BB tranche block or an enriched LP DB Export) is confirmed to carry the two attributes; see segmentation proposal open questions |
 
 ### New open questions
 
@@ -1078,3 +1142,133 @@ live. The remaining step is to surface `bb_template_tabs` and `bb_template_group
 Configuration screen, so an Analyst can register a new agent template variant —
 sheet, header row, skip keywords, column aliases, and classification sections — entirely through
 the UI, with no migration or deploy.
+
+---
+
+## Proposed Change — LP Structural Segmentation (Committed/Uncommitted × Tranche A/B)
+
+> **Status: PROPOSAL ONLY — not implemented.** This section documents a design for review.
+> No schema, code, or config in this section has been built. It supersedes nothing until
+> promoted to a numbered Decision in §7.
+
+### Motivation
+
+Analysts need to **identify, mark, and group** LP records along two facility-structuring axes
+that the platform does not currently persist as first-class, queryable attributes:
+
+- **Committed / Uncommitted** — which LPs' uncalled capital collateralises the *committed*
+  portion of the facility (lender bound to fund) versus the *uncommitted* / discretionary
+  portion (accordion, swingline).
+- **Tranche A / Tranche B** — a facility sub-structuring split (by lender group, advance-rate
+  regime, currency, or maturity), extensible to C/D.
+
+**Relationship to existing "Tranche A/B" handling.** Tranche A/B appears today only as a
+*document-parsing* concern in the Wells Fargo Class A template (Decision 43, Decision 45: the
+extraction service detects a "Tranche A/B" summary block to select a parsing path). That is a
+transient extraction signal — it is **not** retained on the LP record and cannot be filtered,
+grouped, or reported on. This proposal makes both axes **persisted, analyst-editable LP
+attributes**. The LP DB Export (§4) carries neither column, confirming these are net-new.
+
+### Core modeling decisions
+
+1. **Two orthogonal axes, not one composite.** A Committed-Tranche-A LP and an
+   Uncommitted-Tranche-A LP are both valid; neither axis is derived from the other. Two separate
+   fields, not one enum.
+2. **A fourth, independent dimension.** The platform already keeps *LP Category* (`agent_cls` /
+   `cls`), *LP Classification* (regulatory), and *Investor Type* (`investor_type`) as three
+   distinct concepts. Structural segmentation is a **fourth** — it must never overload `cls` /
+   `agent_cls`.
+3. **Calc-neutral overlay (Phase 1).** These attributes feed **grouping, filtering, and
+   subtotals only**. They do **not** touch advance-rate resolution, eligibility, concentration
+   limits, rank (`refreshRanks`), or the BB engine. The certified borrowing-base math is
+   untouched → zero regression risk. This is what makes the change "seamless."
+4. **Config-driven enums + empty-string default.** Option lists and tag colours live in
+   DB-owned `config` JSONB (extensible to Tranche C/D without a migration); new columns are
+   `NOT NULL DEFAULT ''` so every existing row reads as "unassigned" and behaves exactly as today.
+
+### Proposed data model
+
+New Flyway migration (e.g. `V1_x__lp_segmentation.sql`) — additive only:
+
+```sql
+ALTER TABLE lp_records
+  ADD COLUMN commitment_status varchar NOT NULL DEFAULT '',   -- '' | 'Committed' | 'Uncommitted'
+  ADD COLUMN tranche           varchar NOT NULL DEFAULT '';   -- '' | 'A' | 'B' (extensible)
+```
+
+| Layer | Change |
+|---|---|
+| Entity `LpRecord` | Two `@Column(nullable=false)` String fields defaulted `""`, mirroring `agentCls` + getters/setters. No touch to rank/BB logic. |
+| DTO `LpRecordDto` | Add `commitmentStatus`, `tranche` to the record + `from()` mapping (camelCase over the wire). |
+| Config (`classification_config` or new `segmentation_config`) | `COMMITMENT_STATUS_OPTS`, `TRANCHE_OPTS`, `COMMITMENT_TAG_MAP`, `TRANCHE_TAG_MAP` (badge colours; UI `Tag.tsx` keys must mirror the DB tag-map keys). |
+
+### Proposed API surface
+
+| Method | Path | Purpose |
+|---|---|---|
+| PATCH | `/api/lpRecords/{id}` | *Mark* one row — extend the existing `Map` body with two guarded keys (`commitmentStatus`, `tranche`); audit as "LP Segmented". |
+| PATCH | `/api/lpRecords/segment` *(new)* | *Group* — bulk assign `{ ids:[…], commitmentStatus?, tranche? }` in one transaction + one aggregated audit row. |
+| GET | `/api/lpRecords` | *Identify/filter* — add optional `tranche` / `commitmentStatus` query params (new repo derived queries, mirroring `findByFacilityIdAndCls…`). |
+
+Writes are `ANALYST`-only; `VIEWER` remains GET-only (existing RBAC, no new rule needed).
+
+### Reporting
+
+Shadow BB and Reports gain optional **group-by tranche** / **group-by commitment-status**
+subtotals — pure aggregation over existing `ubb` / `abb` values (no rounding, full precision),
+so the BB engine is unchanged.
+
+### Phasing
+
+| Phase | Scope | Risk |
+|---|---|---|
+| **1 (recommended)** | Overlay: 2 columns, config enums, single + bulk write, filter/group/subtotal, UI tags | Very low — additive; existing rows default to `''`; BB math untouched |
+| **2 (optional)** | Facility-level tranche descriptor (committed vs uncommitted amounts, per-tranche coverage/utilisation reporting) | Medium — new facility-child structure; still no per-LP rate change |
+| **3 (only if required)** | Per-tranche advance-rate regime | High — forks the BB into per-tranche subtotals; **not** seamless |
+
+### Open questions (to resolve before promotion to a Decision)
+
+- **Overlay vs. calc-driving** — confirm Phase 1 (identify/mark/group) is the target, not per-tranche rates.
+- **Source of truth** — are Committed/Uncommitted and Tranche always analyst-assigned post-ingest, or ever supplied on the Agent BB? (The LP DB Export has neither column.)
+- **Cardinality** — strictly A/B, or allow C/D from day one? (Config supports it for free.)
+- **Multi-sleeve / umbrella** — `lp_records` permits multiple rows per (facility, investor) for sleeves, and umbrella facilities (§4, `[U]`) span sub-funds. May two sleeves of one investor sit in different tranches? (The proposed model allows it.)
+
+### Phase 2 (design sketch) — Facility-level tranche descriptor
+
+> Only pursue if per-tranche **sizing** and **coverage/utilisation** reporting is needed. Phase 1
+> tags LP rows; Phase 2 gives each tranche a commitment envelope to measure those rows against.
+> Still additive — the single-facility BB unit and `refreshRanks` invariant are preserved; the
+> descriptor drives **reporting subtotals**, not a forked calculation engine (that is Phase 3).
+
+**New child table** `facility_tranches` — one row per (facility, tranche):
+
+| Column | Type | Notes |
+|---|---|---|
+| id | serial PK | |
+| facility_id | integer FK → facilities | Not null |
+| tranche | varchar | `A` / `B` / … — matches `lp_records.tranche` |
+| commitment_status | varchar | `Committed` / `Uncommitted` — the tranche's lender-obligation nature |
+| committed_amount | numeric(20,2) nullable | Lender-bound size for this tranche (USD, exact — no rounding) |
+| uncommitted_amount | numeric(20,2) nullable | Discretionary/accordion size, if the tranche mixes both |
+| advance_rate_profile | varchar nullable | **Reserved for Phase 3** — reference to a per-tranche rate regime; null = inherit facility rates |
+| notes | text nullable | |
+| created_at / updated_at | timestamp | |
+
+Unique constraint on `(facility_id, tranche)`.
+
+**Behaviour:**
+
+- **Reporting only in Phase 2.** Per-tranche *utilisation* = Σ `ubb` of the tranche's LP rows ÷
+  `committed_amount`; per-tranche *coverage* = Σ eligible uncalled ÷ drawn. Both are pure
+  aggregation over already-computed LP values grouped by `lp_records.tranche` — the BB engine and
+  `bb_snapshots.result` shape are unchanged.
+- **`advance_rate_profile` stays null** until (and unless) Phase 3 forks per-tranche rates; it is
+  carried now only so the schema does not need re-migrating later.
+- **Facility total is the sum of its tranches** — a validation warning (non-blocking, matching the
+  `cls_conc_limit_bounds` warn-don't-block pattern) fires when Σ tranche amounts ≠
+  `facilities.facility_size`.
+- **API:** `GET/POST/PUT /api/facilities/{id}/tranches` (ANALYST-only writes); tranche rows join
+  into the facility DTO for the UI's structure panel.
+
+This keeps Committed/Uncommitted and Tranche as the same two labels end-to-end: Phase 1 stamps
+them on LP rows; Phase 2 gives the labels a sized envelope at the facility level to report against.
