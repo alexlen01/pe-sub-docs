@@ -868,7 +868,9 @@ paths:
         accepted — the server computes them and writes ubb / excess-concentration display values
         and ranks back onto the facility's lp_records in the same transaction. The stored
         agent-reported abb (ingest-written) is never modified by a run. A body-less POST re-runs
-        the engine over the persisted records.
+        the engine over the persisted records. The record-level `rcl` status is sticky: an
+        incoming stale `false` value cannot clear a reclassification detected during Save, and
+        every new snapshot/report result retains the persisted flag.
       operationId: runBB
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
