@@ -704,13 +704,17 @@ paths:
       tags: [lpRecords, jobs]
       summary: Seed facility LP records from the pe-sub-jobs feed (SERVICE role)
       description: >
-        Called by `pe-sub-jobs` on startup with the lp_facility_seeds CSV rows. The API
-        resolves the facility and LP Master references by name, merges the LP Master profile
-        (identity, ratings, financial scale) onto the new record, and normalizes the agent /
-        UBS classifications. `lp_records` deliberately has no unique constraint on
-        (facility, investor) — the same investor may appear across sleeves — so idempotency is
-        application-level: pairs that already have a record are skipped, never overwritten.
-        Rows whose facility or LP Master cannot be resolved are skipped.
+        Called by `pe-sub-jobs` on startup with the lp_facility_seeds CSV rows. Each row
+        carries the full per-LP column set of the LP DB Export (facility-level columns
+        excluded), so every column lands on the `lp_records` insert. Row values are
+        authoritative; the LP Master profile (identity, ratings, financial scale) only fills
+        fields the row left blank — a legacy 7-field row therefore keeps the old merge
+        behavior. `ubsCls` arrives pre-derived by the extract from the row's UBSAR via the
+        Run-Shadow-BB rate tiers; the API still normalizes agent / UBS classification labels.
+        `lp_records` deliberately has no unique constraint on (facility, investor) — the same
+        investor may appear across sleeves — so idempotency is application-level: pairs that
+        already have a record are skipped, never overwritten. Rows whose facility or LP Master
+        cannot be resolved are skipped.
       operationId: seedLpRecords
       requestBody:
         required: true
@@ -728,6 +732,30 @@ paths:
                   agentCls:     { type: string, example: "Rated Included" }
                   agentRate:    { type: string, example: "90%" }
                   agentConc:    { type: string, example: "5%" }
+                  parent:          { type: string, example: "Acme Holdings" }
+                  spv:             { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
+                  highQty:         { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
+                  investorType:    { type: string, example: "Pension Fund" }
+                  instVsHnw:       { type: string, example: "Institutional" }
+                  regionLocation:  { type: string, example: "United States" }
+                  investmentGrade: { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
+                  ubsCls:          { type: string, example: "Rated Investor", description: Pre-derived by the extract from row UBSAR via the rate tiers }
+                  sp:              { type: string, example: "AA" }
+                  mdy:             { type: string, example: "Aa2" }
+                  fitch:           { type: string, example: "AA" }
+                  aum:             { type: string, example: "$10B" }
+                  nav:             { type: string, example: "$8B" }
+                  pension:         { type: string, example: "$9B" }
+                  pensionFunded:   { type: string, example: "105%" }
+                  pctCapCommit:    { type: string, example: "3%" }
+                  calledCap:       { type: string, example: "$175M" }
+                  pctUncalled:     { type: string, example: "2%" }
+                  pctCalled:       { type: string, example: "70%" }
+                  ubsConc:         { type: string, example: "4%" }
+                  ubsRate:         { type: string, example: "90%" }
+                  agentBb:         { type: string, example: "$67.5M" }
+                  ubsBb:           { type: string, example: "$67.5M" }
+                  notes:           { type: string }
       responses:
         '200':
           description: Seed summary
@@ -828,6 +856,14 @@ paths:
     post:
       tags: [borrowing-base]
       summary: Compute Shadow BB, persist snapshot, update facility lastRunAt
+      description: >
+        Server-authoritative run. The optional body carries LP *input* rows only
+        (identity, classification, ratings, commitments, rates, concentration limits) which are
+        upserted before computing; engine outputs (abb, ubb, excess concentrations, rank) are not
+        accepted — the server computes them and writes ubb / excess-concentration display values
+        and ranks back onto the facility's lp_records in the same transaction. The stored
+        agent-reported abb (ingest-written) is never modified by a run. A body-less POST re-runs
+        the engine over the persisted records.
       operationId: runBB
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
@@ -2220,8 +2256,10 @@ components:
         totalABB:
           type: number
           description: >
-            Total Agent Borrowing Base ($M).
-            Formula: sum(all LPs, abbM) where abbM is the agent-reported BB figure extracted from the schedule.
+            Total Agent Borrowing Base ($M). Formula: sum(all LPs, abbM).
+            abbM is the agent-reported BB figure extracted from the schedule when stored
+            (including an explicit "$0"); otherwise the engine derives it as
+            MIN(uncalled, total uncalled × agentConc) × agentRate (0 for excluded LPs).
         bbDelta:
           type: number
           description: >
@@ -2265,8 +2303,6 @@ components:
         reclassCount:
           type: integer
           description: Number of LPs where the credit officer changed the classification from the LP Master value (rcl=true).
-        calculatedAt:    { type: string, format: date-time }
-        params:          { $ref: '#/components/schemas/BBParams' }
 
     ComputedLP:
       allOf:
@@ -2274,17 +2310,22 @@ components:
         - type: object
           description: LP record with all derived Shadow BB fields appended by the calculation engine
           properties:
-            uec:         { type: string, description: Formatted UBS Eligible Uncalled Cap e.g. "$25.0M" }
-            uecM:        { type: number, description: UBS Eligible Uncalled Cap in $M }
-            ubbM:        { type: number, description: UBS Borrowing Base in $M }
-            abbM:        { type: number, description: Agent BB in $M }
-            deltaM:      { type: number, description: UBS BB minus Agent BB in $M }
-            concExcessM: { type: number, description: Uncalled above per-LP cap in $M }
-            busaRate:    { type: number, description: BUSA advance rate as decimal e.g. 0.90 }
-            highQuality: { type: boolean, description: "true for Rated Investor / Unrated NAV > $1Bn / FoF & Other > $10Bn AUM / Corp Pension > $5Bn Assets" }
-            ubb:         { type: string, description: Formatted UBS BB e.g. "$22.5M" }
-            delta:       { type: string, description: Formatted delta e.g. "–$3.5M" }
-            rate:        { type: string, description: Formatted BUSA rate e.g. "90%" }
+            uec:          { type: string, description: Formatted UBS Eligible Uncalled Cap e.g. "$25.0M" }
+            uecM:         { type: number, description: UBS Eligible Uncalled Cap in $M }
+            ubbM:         { type: number, description: UBS Borrowing Base in $M }
+            abbM:         { type: number, description: Agent BB in $M (stored agent-reported value, else engine-derived) }
+            deltaM:       { type: number, description: UBS BB minus Agent BB in $M }
+            concExcessM:  { type: number, description: Uncalled above the UBS per-LP cap in $M }
+            ucM:          { type: number, description: Uncalled capital in $M }
+            agentExcessM: { type: number, description: Uncalled above the agent concentration limit in $M (0 when excluded) }
+            pctAgentBB:   { type: number, description: This LP's abbM ÷ totalABB (decimal fraction; 0 when totalABB is 0) }
+            pctUbsBB:     { type: number, description: This LP's ubbM ÷ totalUBB (decimal fraction; 0 when totalUBB is 0) }
+            busaRate:     { type: number, description: BUSA advance rate as decimal e.g. 0.90 }
+            highQuality:  { type: boolean, description: "true for Rated Investor / Unrated NAV > $1Bn / FoF & Other > $10Bn AUM / Corp Pension > $5Bn Assets" }
+            ubb:          { type: string, description: Formatted UBS BB e.g. "$22.5M" }
+            delta:        { type: string, description: Formatted delta e.g. "–$3.5M" }
+            rate:         { type: string, description: Formatted BUSA rate e.g. "90%" }
+            agentRate:    { type: string, description: Agent advance rate as stored, e.g. "95.0%" }
 
     BBBreach:
       type: object

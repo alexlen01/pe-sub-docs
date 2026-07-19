@@ -745,6 +745,50 @@
               "response": []
             },
             {
+              "name": "Seed facility LP records (jobs feed)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "SERVICE",
+                    "description": "SERVICE-gated — pe-sub-jobs feed only."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\n  {\n    \"facilityName\": \"Seed Facility Alpha\",\n    \"investorName\": \"Acme Pension Fund\",\n    \"capCommit\": \"$300M\",\n    \"uncalled\": \"$90M\",\n    \"agentCls\": \"Rated Included\",\n    \"agentRate\": \"90%\",\n    \"agentConc\": \"5%\",\n    \"parent\": \"Acme Holdings\",\n    \"spv\": \"FALSE\",\n    \"highQty\": \"TRUE\",\n    \"investorType\": \"Pension Fund\",\n    \"instVsHnw\": \"Institutional\",\n    \"regionLocation\": \"United States\",\n    \"investmentGrade\": \"TRUE\",\n    \"ubsCls\": \"Rated Investor\",\n    \"sp\": \"AA\",\n    \"mdy\": \"Aa2\",\n    \"fitch\": \"AA\",\n    \"aum\": \"$10B\",\n    \"nav\": \"$8B\",\n    \"pension\": \"$9B\",\n    \"pensionFunded\": \"105%\",\n    \"pctCapCommit\": \"3%\",\n    \"calledCap\": \"$210M\",\n    \"pctUncalled\": \"2%\",\n    \"pctCalled\": \"70%\",\n    \"ubsConc\": \"4%\",\n    \"ubsRate\": \"90%\",\n    \"agentBb\": \"$81M\",\n    \"ubsBb\": \"$67.5M\",\n    \"notes\": \"\"\n  }\n]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/lpRecords/seed",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lpRecords",
+                    "seed"
+                  ]
+                },
+                "description": "Called by pe-sub-jobs on startup with the lp_facility_seeds CSV rows — the full per-LP column set of the LP DB Export (facility-level columns excluded). Row values are authoritative; the LP Master profile only fills fields left blank. ubsCls is pre-derived from row UBSAR via the Run-Shadow-BB rate tiers. Existing (facility, investor) pairs are skipped, never overwritten."
+              },
+              "response": []
+            },
+            {
               "name": "List LP rates (as of period)",
               "request": {
                 "method": "GET",
@@ -860,7 +904,7 @@
                     "{{facilityId}}"
                   ]
                 },
-                "description": "Computes and persists a new shadow BB snapshot for the facility. Returns the snapshot with per-LP computed values."
+                "description": "Computes and persists a new shadow BB snapshot for the facility (server-authoritative engine). An optional JSON body { lps: [...] } upserts LP input rows first — identity, classification, ratings, commitments, rates, concentration limits; engine outputs (abb, ubb, excess concentrations, rank) are not accepted and are computed and written back to lp_records by the server. Body-less POST re-runs over persisted records. Returns the snapshot with per-LP computed values incl. pctAgentBB/pctUbsBB/agentExcessM and the extended summary (totalUEC, totalUC, totalConcExcess, reclassCount)."
               },
               "response": []
             },

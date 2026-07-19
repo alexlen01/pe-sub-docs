@@ -52,7 +52,7 @@ Human-readable role labels are presentation values only. Authorization code, tes
 | Run or recalculate Shadow BB | Yes | No | Yes |
 | Submit Shadow BB for independent review | Yes | No | Yes |
 | Accept or reject completed Shadow BB | No | No | Yes |
-| Accept own work | No | No | No |
+| Accept or reject own Shadow BB submission | No | No | Yes |
 | Export reports for accepted Shadow BB | Yes | Yes | Yes |
 | Abort active submission | Yes | No | Yes, with reason |
 | Reassign workflow ownership | No | No | Yes, with reason |
@@ -74,11 +74,12 @@ There is no internally produced Shadow BB certificate artifact. “Accept” mea
 3. Only a manager may reassign ownership. Record previous owner, new owner, manager, reason, and timestamp.
 4. Analysts may read colleagues' submissions but may not call their state-changing workflow operations.
 5. A manager may override an active step without becoming owner but must provide a reason; audit both action and reason.
-6. An Analyst submits completed work for independent review. Only a manager may accept or reject it.
-7. The accepting manager must not be the maker of the work being accepted. Record maker and checker independently.
-8. Rejection returns the submission to a defined actionable state and records reviewer rationale.
-9. Acceptance records the reviewed version/snapshot, manager, timestamp, outcome, and then transitions the facility to `Active`.
-10. Server authorization evaluates App Role, ownership, and workflow state. URL knowledge or UI manipulation cannot bypass it.
+6. An Analyst submits completed work for review. Only a manager may accept or reject it; if the
+   manager submitted the work themselves, they may also perform that review to avoid a lockout when
+   no second manager is available. Record submitter and reviewer independently.
+7. Rejection returns the submission to a defined actionable state and records reviewer rationale.
+8. Acceptance records the reviewed version/snapshot, manager, timestamp, outcome, and then transitions the facility to `Active`.
+9. Server authorization evaluates App Role, ownership, and workflow state. URL knowledge or UI manipulation cannot bypass it.
 
 ## Identity separation
 
@@ -120,7 +121,8 @@ Structured logs include correlation ID, authenticated `uuName` or an approved ps
 - Gate reads as well as writes where audit scope or sensitive data differs.
 - Do not expose event streams anonymously because `EventSource` cannot attach a header; use a secure same-origin session/BFF or an authenticated streaming client.
 - Separate service-to-service permissions from human roles and validate workload identity and audience.
-- Test every matrix row positively and negatively: owner, non-owner, manager, unknown/no role, invalid token, reassignment, override, and maker-checker separation.
+- Test every matrix row positively and negatively: owner, non-owner, manager, unknown/no role,
+  invalid token, reassignment, override, and manager self-review.
 
 ## UI requirements
 

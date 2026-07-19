@@ -182,8 +182,8 @@ const content = [
   bullet('The Pension Fund maximum is currently displayed/configured but is not yet an engine rule.'),
   callout('Unsaved changes','Persisted breach panels hide while local overrides are active because the stored verdict no longer matches the visible preview. Run again before relying on alerts.','warning'),
 
-  h1('9. Independent Manager Review'),
-  p('Independent review is a regulated maker-checker control. The Manager reviews the submitted snapshot, source reconciliation, overrides, alerts and audit evidence. The reviewer must not be the maker of the work being accepted.'),
+  h1('9. Manager Review'),
+  p('The Manager reviews the submitted snapshot, source reconciliation, overrides, alerts and audit evidence. When no second reviewer is available, a Manager may approve or reject a Shadow BB they submitted themselves.'),
   table(['Decision','Manager action','Outcome'],[
     ['Accept','Confirm the reviewed version and record required rationale/evidence','Facility becomes Active; accepted reports are available'],
     ['Reject','Record clear correction rationale','Submission returns to an actionable state for the owner'],

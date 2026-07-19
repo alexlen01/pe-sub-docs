@@ -6,6 +6,7 @@ Architecture documentation and API specification for the PE Sub Borrowing Base P
 
 | File | Description |
 |---|---|
+| `OUTSTANDING_TASKS_AGENT_HANDOFF.md` | Agent-ready execution runbook for the four outstanding LP data quality, classification, LP Master CRUD, and facility-structure workstreams |
 | `SOLUTION_DESIGN.md` | Living architecture document — repositories, tech stack, schema, API routes, design decisions |
 | `openapi.yaml` | OpenAPI 3.0 specification for `pe-sub-api` (v0.8.0, incl. security schemes) |
 | `openapi-extraction.yaml` | OpenAPI 3.0 specification for `pe-sub-extraction` (port 3002, v1.0.0) |
