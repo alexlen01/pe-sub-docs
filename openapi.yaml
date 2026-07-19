@@ -518,7 +518,10 @@ paths:
           $ref: '#/components/responses/NotFound'
     patch:
       tags: [lpRecords]
-      summary: Update LP fields (classification override, reclassify, notes, etc.)
+      summary: Update LP fields (classifications, notes, etc.)
+      description: >
+        When `agentCls` or `cls` differs from the persisted value, the API automatically sets the
+        record's sticky `rcl` reclassified flag. Clients do not need a separate reclassify action.
       operationId: updateLP
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -569,7 +572,9 @@ paths:
         `uc`, `notes`) update in place when present. `ubsAdvRatePct` / `agentRatePct` /
         `ubsConcLimitPct` / `agentConcLimitPct` are percentages; UBS rate and concentration
         fields upsert into `lp_rates` for the period as decimal fractions. Blank or omitted `cls`
-        is preserved as Unclassified; the service no longer defaults it to Eligible.
+        is preserved as Unclassified; the service no longer defaults it to Eligible. If either
+        `agentCls` or `cls` differs from its persisted value, Save automatically sets the sticky
+        `rcl` flag. The updated Shadow BB must then follow the existing Manager review workflow.
       operationId: saveLPClassification
       requestBody:
         required: true

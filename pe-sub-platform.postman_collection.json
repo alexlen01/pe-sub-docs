@@ -2530,7 +2530,7 @@
                     "events"
                   ]
                 },
-                "description": "Server-Sent Events stream. Broadcasts facility status changes, BB runs, LP reclassifications, and upload events in real time. Keep the connection open; events arrive as 'data: ...' lines. Note: Postman supports SSE via the 'Send' button."
+                "description": "Server-Sent Events stream. Broadcasts facility status changes, BB runs, LP reclassifications detected during record Save, and upload events in real time. Keep the connection open; events arrive as 'data: ...' lines. Note: Postman supports SSE via the 'Send' button."
               },
               "response": []
             }
