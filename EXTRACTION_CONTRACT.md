@@ -46,22 +46,22 @@ pe-sub-ui ──(1) POST /api/submissions (multipart)──▶ pe-sub-api
 - **Response** `200` `ExtractionResponse`. `template.version` is **null** here; the recognised
   template name is set by `pe-sub-api` (it owns recognition).
 
-### Post-extraction derivation (`DerivedFieldCalculator`) — July 2026
-After the sparse-row filter (so facility totals sum over real LP rows only), the engine fills
-canonical fields the workbook has **no column for**, computed from the extracted values:
+### Post-extraction derivation (`DerivedFieldCalculator`) — July 2026, narrowed August 2026
+After the sparse-row filter, the engine supplements a record with canonical fields the workbook has
+**no column for**, computed from other mapped fields **on the same row**:
 
 | Canonical field | Formula |
 |---|---|
 | `Called Capital` | `Commitment − Uncalled Capital` |
-| `% of Capital Commitments` | `Commitment / Σ extracted commitments` |
-| `Concentration (%)` | `Uncalled / Σ extracted uncalled` |
-| `Excess Concentration` | `max(0, Uncalled − concentration cap)` |
-| `Excess Concentration (%)` | `Excess Concentration / Σ extracted uncalled` |
 
-- The concentration cap comes from the extracted per-LP `CONCENTRATION_LIMIT`: a percent (or a
-  fraction ≤ 1) is applied to total extracted uncalled; a plain amount > 1 is an absolute dollar cap.
-- Derivation runs **per sheet** — each sheet is an independent fund sleeve, so totals (and therefore
-  percentages) are computed per sleeve.
+- **Derivation is strictly row-local.** Fields whose formula needs a facility-wide total —
+  `% of Capital Commitments`, `Concentration (%)`, `Excess Concentration`,
+  `Excess Concentration (%)` — are **not** derived. The only total available at this point is a sum
+  over the rows that survived extraction, and the agent's own stated total is discarded by the
+  summary-row filter; any dropped row, sparse-filtered row or unparseable amount silently shrinks
+  that denominator and overstates every LP's percentage. These fields are left blank for the analyst
+  to supply. The borrowing-base engine computes its own concentration figures from the full facility
+  LP set (`pe-sub-api` `BbCalculationService`), so the BB is unaffected.
 - **Agent-supplied columns are never overwritten or back-filled** — a field is derived only when no
   workbook column mapped to it.
 - Derived values carry the sourceHeader prefix **`Derived: `** and a confidence equal to the minimum
@@ -82,7 +82,7 @@ canonical fields the workbook has **no column for**, computed from the extracted
 - [x] `GET /api/submissions/{id}/unrecognized-columns` → `string[]`.
 
 ### Registry (Upload Template) — `POST /api/bb-templates/import`
-- [x] `multipart`: `file` (a `BB-Template-Import-*.xlsx`) → `201` `BbTemplateDto`.
+- [x] `multipart`: `file` (a BB template `*.xlsx`) → `201` `BbTemplateDto`.
 - [x] Template ID (`template_slug`) is the identity; duplicates auto-version (`gs-blue-owl-1`, …).
 - [x] `GET/POST/PUT/DELETE /api/bb-templates` for registry CRUD.
 
@@ -273,13 +273,13 @@ Scored against every registry template (highest wins; operator `forceTemplate` o
 - [x] Engine = stateless parser; `/api/inspect` + deterministic `/api/extract`.
 - [x] Recognition centralised in `pe-sub-api` (`TemplateRecognitionService`), registry-driven.
 - [x] Async upload handoff (202 + bounded executor + polling).
-- [x] Import-driven registry (`BB-Template-Import`, 6 sheets) + Template ID auto-versioning.
+- [x] Import-driven registry (BB template workbook, 6 sheets) + Template ID auto-versioning.
 - [x] No hardcoded agent/fund names in code (engine/api/ui purged); Flyway template seeds removed.
-- [x] Post-extraction derivation (`DerivedFieldCalculator`): fills Called Capital, % of Capital
-  Commitments, Concentration (%), Excess Concentration (%) per sleeve; marks values `Derived: `.
+- [x] Post-extraction derivation (`DerivedFieldCalculator`): row-local only — fills Called Capital
+  and marks it `Derived: `. Total-dependent percentage fields are left to the analyst.
 
 **Pending**
-- [ ] Correct the 7 `BB-Template-Import-*.xlsx` cell content (data only) — e.g. `gs-blue-owl` flat list + `Investor Type`/`Fitch`; `kkr-ascendant` agent/`detect_keys`.
+- [ ] Correct the 7 BB template `*.xlsx` cell content (data only) — e.g. `gs-blue-owl` flat list + `Investor Type`/`Fitch`; `kkr-ascendant` agent/`detect_keys`.
 - [ ] Per-template `@SpringBootTest` (import → recognise sample → assert slug) in `pe-sub-api`.
 - [ ] Reconcile remaining api integration tests for the async 202 + `friendlyFormat` label change.
 - [ ] Optional: retire dead `ClassificationConfigBuilder` + legacy `ExtractionClientService.extract` overloads.

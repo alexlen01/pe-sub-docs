@@ -31,22 +31,24 @@ Primary LP storage is `pe-sub-api` `lp_records`, represented by `Lp` and exposed
 | Uncalled | `uc` | `uc` | `uncalled_capital` | Uncalled capital. |
 | PercentOfUncalled | `pctUncalled` | `pctUncalled` | `pct_uncalled` | LP uncalled capital as a percentage of total uncalled. |
 | CalledPercent | `pctCalled` | `pctCalled` | `pct_called` | Percentage of the LP's own commitment that has been called. |
-| AgentCL | `agentConc` | `agentConc` | `agent_conc` | Agent concentration limit / concentration value. |
-| UBSCL | `ubsConc` | `ubsConc` | `ubs_conc` | UBS concentration limit / concentration value. |
+| AgentCL | `agentConcLimit` | `agentConcLimit` | `agent_conc_limit` | Agent concentration limit. `NUMERIC`; percent scale (`7.5` = 7.5%). |
+| UBSCL | `ubsConcLimit` | `ubsConcLimit` | `ubs_conc_limit` | UBS concentration limit. `NUMERIC`; either a percent (`7.5`) or an absolute dollar cap (`25000000`). |
 | AgentBB | `abb` | `abb` | `agent_bb` | Agent borrowing base. |
 | UBSBB | `ubb` | `ubb` | `ubs_bb` | UBS borrowing base. |
 | BBDate | Facility-level `lastRunAt` | `Facility.lastRunAt` | `facilities.last_run_at` | Facility-level last BB run date. Not an LP-level field. |
 
-## Precise Numeric Companion Columns (internal)
+## Precise Money Columns
 
-Four money fields are dual-stored: the formatted display string (columns above) plus an exact-dollar `NUMERIC(20,2)` companion used by the BB engine. The numeric columns are internal — they never appear on `LpDto` or in the UI.
+Four money fields are stored as a single exact-dollar `NUMERIC(20,2)` column each — there is no formatted display-string sibling (the earlier `*_num` companions were consolidated away, August 2026). The BB engine computes directly off the numeric (`BbCalculationService.dollarM`); DTOs format for display on the way out (`MoneyValues.display`), so the string-typed API/UI contract is unchanged but values are never re-abbreviated: `"$4.2B"` in comes back as `"$4,200,000,000"`.
 
-| Display column | Numeric companion | Written by |
+| Column | Type | Written by |
 |---|---|---|
-| `uncalled_capital` | `uncalled_capital_num` | Extraction ingest (exact decimal) and Shadow BB commit (re-derived from committed string) |
-| `cap_commit` | `cap_commit_num` | Same |
-| `aum` | `aum_num` | Same |
-| `agent_bb` | `agent_bb_num` | Same; cleared when the committed `abb` string is blank |
+| `uncalled_capital` | `NUMERIC(20,2)` | Extraction ingest (exact decimal) and Shadow BB commit (parsed from the committed string) |
+| `cap_commit` | `NUMERIC(20,2)` | Same |
+| `aum` | `NUMERIC(20,2)` | Same |
+| `agent_bb` | `NUMERIC(20,2)` | Ingest only — agent-reported; a Shadow BB run never overwrites it |
+
+`agent_conc_limit` and `ubs_conc_limit` (renamed from `agent_conc` / `ubs_conc`) are likewise `NUMERIC`. They hold either a percent of total uncalled capital (`7.5`) or an absolute dollar cap (`25000000`); the two are told apart by magnitude at `BbCalculationService.ABSOLUTE_DOLLAR_MIN` (100,000).
 
 ## Related LP Fields Not In The Provided Source List
 

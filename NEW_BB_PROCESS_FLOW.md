@@ -43,11 +43,14 @@ Shows the mapping of extracted column headers to canonical LP Master fields. The
 **3c — Extracted LP Data (34 Records)**  
 LP-level table showing extracted values. Clicking a row opens a detail panel showing extracted fields and their canonical mappings. LPs with extraction confidence ≥ 95% are flagged for auto-matching in Step 4.
 
-*Live platform:* the engine also **derives** canonical fields the workbook has no column for —
-Called Capital, % of Capital Commitments, Concentration (%), Excess Concentration (%) — computed
-per fund sleeve from the extracted figures and shown with a `Derived: ` source marker so they read
-as cross-checks, not agent figures (see `EXTRACTION_CONTRACT.md`). Investor Type is auto-derived
-from the investor name at ingestion (`InvestorTypeDeriver`) where the LP Master has none.
+*Live platform:* the engine also **derives** canonical fields the workbook has no column for, but
+only from other mapped fields on the same row — currently just Called Capital — shown with a
+`Derived: ` source marker so it reads as a cross-check, not an agent figure. Percentage fields that
+would need a facility-wide total (% of Capital Commitments, Concentration (%), Excess Concentration,
+Excess Concentration (%)) are **not** computed and are left blank for the Analyst to supply; the
+borrowing-base engine derives its own concentration figures from the full facility LP set (see
+`EXTRACTION_CONTRACT.md`). Investor Type is auto-derived from the investor name at ingestion
+(`InvestorTypeDeriver`) where the LP Master has none.
 
 ---
 

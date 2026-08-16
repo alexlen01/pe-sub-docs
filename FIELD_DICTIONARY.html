@@ -1,0 +1,535 @@
+<title>LP Canonical Field Dictionary</title>
+<style>
+  :root {
+    --ground:        #F7F8FA;
+    --surface:       #FFFFFF;
+    --surface-sunk:  #EEF0F4;
+    --ink:           #1A1D23;
+    --ink-soft:      #4A5261;
+    --ink-faint:     #79828F;
+    --rule:          #DDE1E8;
+    --rule-strong:   #C3CAD4;
+    --agent:         #A2603A;
+    --agent-wash:    #F3E7DE;
+    --shadow:        #2F6F6B;
+    --shadow-wash:   #DEECEA;
+    --profile:       #55606E;
+    --profile-wash:  #E5E8ED;
+    --warn:          #8A6D1F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:       #14161A;
+      --surface:      #1B1E24;
+      --surface-sunk: #23272F;
+      --ink:          #E8EAEE;
+      --ink-soft:     #AAB3C0;
+      --ink-faint:    #7C8592;
+      --rule:         #2C313A;
+      --rule-strong:  #3D444F;
+      --agent:        #D69A6F;
+      --agent-wash:   #33261C;
+      --shadow:       #6FBDB6;
+      --shadow-wash:  #17302E;
+      --profile:      #98A3B2;
+      --profile-wash: #262B33;
+      --warn:         #C8A94E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:       #14161A;
+    --surface:      #1B1E24;
+    --surface-sunk: #23272F;
+    --ink:          #E8EAEE;
+    --ink-soft:     #AAB3C0;
+    --ink-faint:    #7C8592;
+    --rule:         #2C313A;
+    --rule-strong:  #3D444F;
+    --agent:        #D69A6F;
+    --agent-wash:   #33261C;
+    --shadow:       #6FBDB6;
+    --shadow-wash:  #17302E;
+    --profile:      #98A3B2;
+    --profile-wash: #262B33;
+    --warn:         #C8A94E;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  h1, h2, h3 {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 { font-size: 40px; line-height: 1.15; letter-spacing: -0.015em; }
+  h2 { font-size: 25px; line-height: 1.25; letter-spacing: -0.01em; }
+  h3 { font-size: 17px; line-height: 1.3; }
+
+  code, .mono, td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code {
+    font-size: 0.875em;
+    background: var(--surface-sunk);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  header {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 56px 0 28px;
+    border-bottom: 2px solid var(--rule-strong);
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 600;
+  }
+  .lede { font-size: 17px; color: var(--ink-soft); max-width: 68ch; margin: 0; }
+
+  section { display: flex; flex-direction: column; gap: 16px; padding-top: 44px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend-item {
+    display: flex; gap: 11px; align-items: flex-start;
+    flex: 1 1 260px; padding: 13px 15px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 5px;
+  }
+  .swatch { width: 4px; align-self: stretch; border-radius: 2px; flex: none; }
+  .legend-item p { margin: 3px 0 0; font-size: 13px; color: var(--ink-soft); }
+  .legend-item strong { font-size: 13.5px; }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 5px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  thead th {
+    text-align: left; font-weight: 600; font-size: 11px;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint);
+    padding: 11px 13px; border-bottom: 1px solid var(--rule-strong);
+    background: var(--surface-sunk); white-space: nowrap;
+  }
+  tbody td { padding: 10px 13px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono { font-size: 12.5px; }
+  .none { color: var(--ink-faint); }
+
+  td.own { border-left: 4px solid var(--rule-strong); white-space: nowrap; }
+  tr.agent   td.own { border-left-color: var(--agent); }
+  tr.shadow  td.own { border-left-color: var(--shadow); }
+  tr.profile td.own { border-left-color: var(--profile); }
+
+  .chip {
+    display: inline-block; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 3px; white-space: nowrap;
+  }
+  .chip.agent   { background: var(--agent-wash);   color: var(--agent); }
+  .chip.shadow  { background: var(--shadow-wash);  color: var(--shadow); }
+  .chip.profile { background: var(--profile-wash); color: var(--profile); }
+  .chip.derived {
+    background: transparent; color: var(--warn);
+    border: 1px solid currentColor; margin-left: 5px;
+  }
+
+  .note {
+    border-left: 3px solid var(--rule-strong); padding: 2px 0 2px 15px;
+    color: var(--ink-soft); font-size: 14px; max-width: 74ch;
+  }
+  .note.caution { border-left-color: var(--warn); }
+
+  ul { margin: 0; padding-left: 20px; color: var(--ink-soft); }
+  li { margin-bottom: 7px; }
+  li strong { color: var(--ink); }
+  p { max-width: 74ch; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--shadow); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">PE Subscription Platform · Data Dictionary</div>
+  <h1>LP Canonical Field Dictionary</h1>
+  <p class="lede">
+    Every LP-level field the platform recognises, traced from the canonical field-mapping dictionary
+    through to the LP Extract columns that hold the historical record. Each field is attributed to the
+    party that owns it — the <strong>Agent BB</strong> reports it, the <strong>Shadow BB</strong> computes it,
+    or the <strong>LP profile</strong> carries it independently of any single facility.
+  </p>
+</header>
+
+<section>
+  <h2>Who owns a field</h2>
+  <p>
+    The single most important distinction in this dictionary. An Agent BB value is what the agent bank
+    told us; a Shadow BB value is what UBS decided. Several concepts exist in <em>both</em> worlds —
+    advance rate, concentration limit, borrowing base, excess concentration — and are stored as separate
+    columns precisely so the spread between them can be measured. That spread is what the Shadow BB exists
+    to produce.
+  </p>
+  <div class="legend">
+    <div class="legend-item">
+      <div class="swatch" style="background: var(--agent);"></div>
+      <div>
+        <strong>Agent BB</strong>
+        <p>Extracted verbatim from the agent bank's workbook. Never overwritten by a Shadow BB run.</p>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background: var(--shadow);"></div>
+      <div>
+        <strong>Shadow BB</strong>
+        <p>UBS's own category, rate, limit or computed result. Server-authoritative — the engine writes it.</p>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background: var(--profile);"></div>
+      <div>
+        <strong>LP profile</strong>
+        <p>Bank-wide attributes of the investor. Held on <code>lp_master</code>, copied onto each facility record.</p>
+      </div>
+    </div>
+  </div>
+  <p class="note caution">
+    <span class="chip derived">derived</span> marks fields the agent <em>calculated</em> rather than reported.
+    They are display and cross-check only: the Shadow BB never treats them as inputs, because doing so would
+    import the agent's own concentration and eligibility assumptions into UBS's numbers.
+  </p>
+</section>
+
+<section>
+  <h2>1 · Identity &amp; core hierarchy</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="profile"><td class="own">Investor Name</td><td><span class="chip profile">Profile</span></td><td class="mono">InvestorName</td><td class="mono">investor_name</td><td class="mono">investorName</td><td class="mono">VARCHAR(255)</td></tr>
+        <tr class="profile"><td class="own">Parent / Sponsor</td><td><span class="chip profile">Profile</span></td><td class="mono">Parent</td><td class="mono">parent</td><td class="mono">parent</td><td class="mono">VARCHAR(255)</td></tr>
+        <tr class="profile"><td class="own">SPV Flag</td><td><span class="chip profile">Profile</span></td><td class="mono">SPV</td><td class="mono">spv</td><td class="mono">spv</td><td class="mono">BOOLEAN</td></tr>
+        <tr class="agent"><td class="own">Transferee</td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="mono">transferee</td><td class="mono">transferee</td><td class="mono">BOOLEAN</td></tr>
+        <tr class="profile"><td class="own">Region / Location</td><td><span class="chip profile">Profile</span></td><td class="mono">Region</td><td class="mono">region_location</td><td class="mono">regionLocation</td><td class="mono">VARCHAR(255)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>2 · Classification &amp; underwriting</h2>
+  <p class="note caution">
+    Three separate concepts live in this group and must never be collapsed into one another.
+    <strong>LP Category</strong> is a borrowing-base risk bucket, and exists twice — the agent's and UBS's.
+    <strong>Investor Type</strong> is the entity's industry persona (Pension Fund, SWF, Endowment).
+    <strong>Institutional vs HNW</strong> is UBS's two-way segmentation. The old column name
+    <code>classification</code> invited exactly this conflation, which is why it no longer exists.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="profile"><td class="own">Investor Type</td><td><span class="chip profile">Profile</span></td><td class="mono">InvestorType</td><td class="mono">investor_type</td><td class="mono">investorType</td><td class="mono">VARCHAR(255)</td></tr>
+        <tr class="profile"><td class="own">Institutional vs HNW</td><td><span class="chip profile">Profile</span></td><td class="mono">InstitutionalHNW</td><td class="mono">institutional_or_hnw</td><td class="mono">institutionalOrHnw</td><td class="mono">VARCHAR(255)</td></tr>
+        <tr class="agent"><td class="own">LP Category</td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="mono">agent_lp_category</td><td class="mono">agentLpCategory</td><td class="mono">VARCHAR(255)</td></tr>
+        <tr class="shadow"><td class="own">UBS LP Classification</td><td><span class="chip shadow">Shadow</span></td><td class="mono">Classification</td><td class="mono">ubs_lp_category</td><td class="mono">ubsLpCategory</td><td class="mono">VARCHAR(255)</td></tr>
+        <tr class="agent"><td class="own">Eligibility Flag<span class="chip derived">derived</span></td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="mono">included</td><td class="mono">included</td><td class="mono">BOOLEAN</td></tr>
+        <tr class="profile"><td class="own">Investment Grade Flag</td><td><span class="chip profile">Profile</span></td><td class="mono">InvestmentGrade</td><td class="mono">investment_grade</td><td class="mono">investmentGrade</td><td class="mono">BOOLEAN</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    Provenance for the agent category is kept alongside it in <code>agent_lp_category_source</code>
+    (<code>EXTRACTED</code> · <code>DERIVED</code> · <code>USER_EDITED</code>), so a value the platform
+    inferred is never mistaken for one the agent actually stated.
+  </p>
+</section>
+
+<section>
+  <h2>3 · Credit ratings</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="profile"><td class="own">S&amp;P Rating</td><td><span class="chip profile">Profile</span></td><td class="mono">SP</td><td class="mono">sp_rating</td><td class="mono">spRating</td><td class="mono">VARCHAR(50)</td></tr>
+        <tr class="profile"><td class="own">Moody's Rating</td><td><span class="chip profile">Profile</span></td><td class="mono">Moodys</td><td class="mono">moodys_rating</td><td class="mono">moodysRating</td><td class="mono">VARCHAR(50)</td></tr>
+        <tr class="profile"><td class="own">Fitch Rating</td><td><span class="chip profile">Profile</span></td><td class="mono">Fitch</td><td class="mono">fitch_rating</td><td class="mono">fitchRating</td><td class="mono">VARCHAR(50)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    Width is defensive: ratings carry outlook qualifiers (<code>BBB- *-</code>, <code>Baa3 negative</code>)
+    and must be stored exactly as the agent wrote them. The rating triple plus funded percentage is what
+    resolves an LP's advance rate against <code>bb_criteria_matrix</code>.
+  </p>
+</section>
+
+<section>
+  <h2>4 · Commitment data</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="agent"><td class="own">Capital Commitments</td><td><span class="chip agent">Agent</span></td><td class="mono">Commitments</td><td class="mono">capital_commitment</td><td class="mono">capitalCommitment</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="agent"><td class="own">% of Capital Commitments</td><td><span class="chip agent">Agent</span></td><td class="mono">PercentOfCommitments</td><td class="mono">pct_of_fund_commitments</td><td class="mono">pctOfFundCommitments</td><td class="mono">NUMERIC(7,4)</td></tr>
+        <tr class="agent"><td class="own">Called Capital</td><td><span class="chip agent">Agent</span></td><td class="mono">Called</td><td class="mono">called_capital</td><td class="mono">calledCapital</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="agent"><td class="own">Recallable Distributions</td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="mono">recallable_distributions</td><td class="mono">recallableDistributions</td><td class="mono">NUMERIC(20,2)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>5 · Uncalled data</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="agent"><td class="own">Uncalled Capital</td><td><span class="chip agent">Agent</span></td><td class="mono">Uncalled</td><td class="mono">uncalled_capital</td><td class="mono">uncalledCapital</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="agent"><td class="own">% of Uncalled Capital</td><td><span class="chip agent">Agent</span></td><td class="mono">PercentOfUncalled</td><td class="mono">pct_of_fund_uncalled</td><td class="mono">pctOfFundUncalled</td><td class="mono">NUMERIC(7,4)</td></tr>
+        <tr class="agent"><td class="own">% of LP Called</td><td><span class="chip agent">Agent</span></td><td class="mono">CalledPercent</td><td class="mono">pct_lp_called</td><td class="mono">pctLpCalled</td><td class="mono">NUMERIC(7,4)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    The two <em>% of fund</em> columns measure this LP against the whole fund; <em>% of LP called</em> measures
+    the LP against its own commitment. Only the last one drives anything — it is the funded percentage the
+    advance-rate matrix bands on.
+  </p>
+</section>
+
+<section>
+  <h2>6 · Financial scale</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="profile"><td class="own">Size Metric Type</td><td><span class="chip profile">Profile</span></td><td class="none">—</td><td class="none">not persisted</td><td class="none">—</td><td class="none">—</td></tr>
+        <tr class="profile"><td class="own">Size Value / Tier</td><td><span class="chip profile">Profile</span></td><td class="none">—</td><td class="none">not persisted</td><td class="none">—</td><td class="none">—</td></tr>
+        <tr class="profile"><td class="own">AUM</td><td><span class="chip profile">Profile</span></td><td class="mono">AUM</td><td class="mono">aum</td><td class="mono">aum</td><td class="mono">VARCHAR(50)</td></tr>
+        <tr class="profile"><td class="own">NAV</td><td><span class="chip profile">Profile</span></td><td class="mono">NAV</td><td class="mono">nav</td><td class="mono">nav</td><td class="mono">VARCHAR(50)</td></tr>
+        <tr class="profile"><td class="own">Net Worth</td><td><span class="chip profile">Profile</span></td><td class="none">—</td><td class="none">not persisted</td><td class="none">—</td><td class="none">—</td></tr>
+        <tr class="profile"><td class="own">Pension Assets</td><td><span class="chip profile">Profile</span></td><td class="mono">PensionAssets</td><td class="mono">pension_assets</td><td class="mono">pensionAssets</td><td class="mono">VARCHAR(50)</td></tr>
+        <tr class="profile"><td class="own">Pension Funded %</td><td><span class="chip profile">Profile</span></td><td class="mono">FundingRatio</td><td class="mono">funding_ratio</td><td class="mono">fundingRatio</td><td class="mono">NUMERIC(7,4)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    AUM, NAV and Pension Assets are <em>display</em> fields, never borrowing-base inputs — so they stay text on
+    both <code>lp_records</code> and <code>lp_master</code> and keep the agent's own wording (<code>"$4.2B"</code>).
+    Funding ratio is the exception: it feeds the criteria matrix, so it is numeric.
+  </p>
+</section>
+
+<section>
+  <h2>7 · Borrowing base</h2>
+  <p>
+    The clearest place the two worlds sit side by side. Every agent figure here is agent-calculated, so all of
+    it is display and cross-check only; the Shadow BB derives its own from uncalled capital, the UBS
+    concentration limit and the UBS advance rate.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="agent"><td class="own">Borrowing Base<span class="chip derived">derived</span></td><td><span class="chip agent">Agent</span></td><td class="mono">AgentBB</td><td class="mono">agent_borrowing_base</td><td class="mono">agentBorrowingBase</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="shadow"><td class="own">Borrowing Base</td><td><span class="chip shadow">Shadow</span></td><td class="mono">UBSBB</td><td class="mono">ubs_borrowing_base</td><td class="mono">ubsBorrowingBase</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="shadow"><td class="own">Eligible Commitment</td><td><span class="chip shadow">Shadow</span></td><td class="none">—</td><td class="none">snapshot only</td><td class="mono">uncalledEligibleCapital</td><td class="mono">NUMERIC</td></tr>
+        <tr class="agent"><td class="own">% of Borrowing Base<span class="chip derived">derived</span></td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="none">snapshot only</td><td class="mono">pctAgentBB · pctUbsBB</td><td class="mono">double</td></tr>
+        <tr class="agent"><td class="own">% of Eligible Uncalled<span class="chip derived">derived</span></td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="none">snapshot only</td><td class="none">—</td><td class="none">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note caution">
+    <code>agent_borrowing_base</code> is written at ingest and a Shadow BB run <em>never</em> overwrites it —
+    it is the agent's reported figure and the baseline the delta is measured against. Where the agent reported
+    no figure at all, the engine derives one from their rate and limit rather than writing it back.
+  </p>
+</section>
+
+<section>
+  <h2>8 · Advance rates &amp; concentration limits</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="agent"><td class="own">Advance Rate</td><td><span class="chip agent">Agent</span></td><td class="mono">AgentAR</td><td class="mono">agent_advance_rate</td><td class="mono">agentAdvanceRate</td><td class="mono">NUMERIC(7,4)</td></tr>
+        <tr class="shadow"><td class="own">Advance Rate</td><td><span class="chip shadow">Shadow</span></td><td class="mono">UBSAR</td><td class="mono">ubs_advance_rate</td><td class="mono">ubsAdvanceRate</td><td class="mono">NUMERIC(7,4)</td></tr>
+        <tr class="agent"><td class="own">Concentration Limit</td><td><span class="chip agent">Agent</span></td><td class="mono">AgentCL</td><td class="mono">agent_concentration_limit</td><td class="mono">agentConcentrationLimit</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="shadow"><td class="own">Concentration Limit</td><td><span class="chip shadow">Shadow</span></td><td class="mono">UBSCL</td><td class="mono">ubs_concentration_limit</td><td class="mono">ubsConcentrationLimit</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="agent"><td class="own">Concentration (%)</td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="none">not persisted</td><td class="none">—</td><td class="none">—</td></tr>
+        <tr class="agent"><td class="own">Excess Concentration<span class="chip derived">derived</span></td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="mono">agent_excess_concentration</td><td class="mono">agentExcessConcentration</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="shadow"><td class="own">Excess Concentration</td><td><span class="chip shadow">Shadow</span></td><td class="none">—</td><td class="mono">ubs_excess_concentration</td><td class="mono">ubsExcessConcentration</td><td class="mono">NUMERIC(20,2)</td></tr>
+        <tr class="agent"><td class="own">Excess Concentration (%)<span class="chip derived">derived</span></td><td><span class="chip agent">Agent</span></td><td class="none">—</td><td class="none">not persisted</td><td class="none">—</td><td class="none">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note caution">
+    The UBS advance rate <em>overrides</em> the matrix default when set — the same LP category can carry
+    0.90, 0.75 or 0.00 across a population, so a stored per-LP rate always wins. With no stored rate and no
+    matrix row, the rate is 0%, never a silent fallback.
+  </p>
+</section>
+
+<section>
+  <h2>9 · Notes</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical field</th><th>Owner</th><th>LP Extract</th>
+          <th>DB column</th><th>API / UI</th><th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="profile"><td class="own">Notes</td><td><span class="chip profile">Profile</span></td><td class="mono">Notes</td><td class="mono">notes</td><td class="mono">notes</td><td class="mono">TEXT</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Reconciling against the LP Extract</h2>
+  <p>
+    The LP Extract is the historical record, so it is the reconciliation anchor: every one of its 32 columns
+    is accounted for below. Three are facility-level and drive <code>facilities</code>, not the LP record.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>LP Extract column</th><th>Disposition</th><th>Lands on</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">AccountID</td><td>Facility-level</td><td class="mono">facilities.account_number</td></tr>
+        <tr><td class="mono">FndName</td><td>Facility-level</td><td class="mono">facilities.name</td></tr>
+        <tr><td class="mono">BBDate</td><td>Facility-level</td><td class="mono">facilities.last_run_at</td></tr>
+        <tr><td class="mono">HQ</td><td>No canonical field — LP profile flag</td><td class="mono">lp_records.high_quality</td></tr>
+        <tr><td class="none" colspan="3" style="text-align:center; padding:14px;">the remaining 28 columns map to canonical fields in the tables above</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note caution">
+    <code>HQ</code> means <strong>high quality</strong> — a borrowing-base quality tier — not <em>headquarters</em>
+    and not a quantity. It was stored as <code>high_qty</code> for a long time, which read as "high quantity"
+    and is the single most misread field in the model.
+  </p>
+
+  <h3 style="padding-top: 16px;">Platform fields with no extract column</h3>
+  <p>These exist only because the platform tracks provenance and workflow state; the historical extract has no counterpart.</p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>DB column</th><th>Owner</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr class="shadow"><td class="own mono">ubs_lp_category_tag</td><td><span class="chip shadow">Shadow</span></td><td>Optional qualifier on the UBS category.</td></tr>
+        <tr class="agent"><td class="own mono">agent_lp_category_source</td><td><span class="chip agent">Agent</span></td><td>Whether the agent category was extracted, derived, or user-edited.</td></tr>
+        <tr class="shadow"><td class="own mono">lp_rank</td><td><span class="chip shadow">Shadow</span></td><td>Facility-specific rank over the LP population, recomputed each run.</td></tr>
+        <tr class="shadow"><td class="own mono">reclassified</td><td><span class="chip shadow">Shadow</span></td><td>Sticky flag set when a category changed during review.</td></tr>
+        <tr class="agent"><td class="own mono">source_seq</td><td><span class="chip agent">Agent</span></td><td>The LP's row position in the originating workbook — the ordering key through the whole wizard.</td></tr>
+        <tr class="profile"><td class="own mono">lp_master_id</td><td><span class="chip profile">Profile</span></td><td>Link back to the bank-wide profile. Nulled, never cascaded, when a master row is removed.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Type conventions</h2>
+  <p>Four rules govern every cell in this dictionary. They are the ones most often got wrong.</p>
+  <ul>
+    <li>
+      <strong>Percents and rates are fractions.</strong> <code>NUMERIC(7,4)</code>, where
+      <code>0.9100</code> means 91%. They are numeric on the wire too — the API emits the raw fraction and the
+      UI multiplies by 100 at render. A value ingested as <code>0.91</code> displays as <code>91%</code>,
+      never <code>0.91%</code>. Inbound <code>"91%"</code>, <code>91</code> and <code>0.91</code> all normalise
+      to the same stored <code>0.91</code>.
+    </li>
+    <li>
+      <strong>Money is exact dollars.</strong> <code>NUMERIC(20,2)</code>, no formatted sibling column. The
+      engine computes off the numeric, and DTOs format on the way out — so an abbreviated
+      <code>"$4.2B"</code> input returns as <code>"$4,200,000,000"</code> and is never re-abbreviated.
+    </li>
+    <li>
+      <strong>LP-size fields stay text.</strong> AUM, NAV and Pension Assets are
+      <code>VARCHAR(50)</code> on both tables, kept exactly as the agent reported them, because they describe
+      the investor rather than feeding a calculation.
+    </li>
+    <li>
+      <strong>Concentration limits are the exception to the fraction rule.</strong> One
+      <code>NUMERIC(20,2)</code> column holds either a percent of total uncalled (<code>7.5</code>) or an
+      absolute dollar cap (<code>25000000</code>), told apart by magnitude at a 100,000 threshold. They are
+      <em>not</em> on the fraction scale — treating them as one silently voids every dollar-denominated limit.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2>Where each name lives</h2>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Layer</th><th>Naming</th><th>Source of truth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Canonical dictionary</td><td>Title Case labels</td><td class="mono">fm_canonical_fields</td></tr>
+        <tr><td>Agent workbook headers</td><td>Agent's own wording</td><td class="mono">fm_aliases</td></tr>
+        <tr><td>LP Extract</td><td class="mono">PascalCase</td><td class="mono">lp_db_extract.py · SRC_COLS</td></tr>
+        <tr><td>CSV feed</td><td class="mono">snake_case</td><td class="mono">lp_db_extract.py · MASTER_COLS / SEED_COLS</td></tr>
+        <tr><td>Database</td><td class="mono">snake_case</td><td class="mono">V1_1__schema.sql</td></tr>
+        <tr><td>API JSON</td><td class="mono">camelCase</td><td class="mono">LpRecordDto · LpMasterDto</td></tr>
+        <tr><td>UI</td><td class="mono">camelCase</td><td class="mono">types/lp.ts</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    Database, API and UI names now match one-for-one — no snake_case aliases on the wire and no abbreviations.
+    The two contracts that deliberately keep their own vocabulary are the agent workbook headers, which belong
+    to the agents, and the LP Extract columns, which belong to the historical record.
+  </p>
+</section>
+
+</div>

@@ -33,7 +33,7 @@ as implemented in `BbCalculationService` / `bbCalculationService.ts`.
 |---|---|---|
 | Advance-rate default by class | `BbCalculationService.getRateForCls` (reads `classification_config.BUSA_RATE_MAP` / `UBS_CLS_DEFAULT_RATE`) | `bbCalculationService.ts:advanceRateFraction`; `RunShadowBB/index.tsx` `buildOverride` (`busaRatePctForCls`) |
 | Per-LP concentration limit default | `BbCalculationService.perLpConc` + `loadClsConcDefaults` (reads `cls_conc_limit_defaults`) | `RunShadowBB` `buildOverride` (`clsConcLimitPctForCls`), Configuration §1b "Per-LP Concentration Limit Defaults" |
-| Manual override (wins over default) | `LpRecord.ubsRate`, `LpRecord.ubsConc` → `lp_rates` | RunShadowBB "UBS Advance Rate" / "UBS Concentration Limit" columns |
+| Manual override (wins over default) | `LpRecord.ubsRate`, `LpRecord.ubsConcLimit` → `lp_rates` | RunShadowBB "UBS Advance Rate" / "UBS Concentration Limit" columns |
 | Config keys | `config` table: `classification_config`, `cls_conc_limit_defaults`, `cls_conc_limit_bounds`, `conc_limits` | `GET/PUT /api/config/eligibility`, `GET /api/config/classification`, `POST /api/config/reload` |
 | Run / Re-run | `POST /api/bb/run/{facilityId}` → `ShadowBbService.runAndSnapshot` → `BbCalculationService.compute` | `RunShadowBB/index.tsx` |
 | Funded % (already present) | `BbController.calledCapM/capCommitM` | RunShadowBB computes `pctCalled = calledCap ÷ capCommit` and renders it as **"% of LP Called"** |
@@ -305,7 +305,7 @@ Logic:
 
 ### 7.4 Manual override preserved
 
-No change to override precedence: `LpRecord.ubsRate` / `ubsConc` (and `lp_rates`) continue to win over the
+No change to override precedence: `LpRecord.ubsRate` / `ubsConcLimit` (and `lp_rates`) continue to win over the
 computed default. The workbook makes the *default* deterministic and correct, reducing manual entry and drift.
 
 ---
@@ -345,7 +345,7 @@ classes are already selectable. This keeps Stage 1 low-risk and independently sh
 **Stage 2 — Run / Re-run Shadow BB (behaviour switches on) — ✅ IMPLEMENTED**
 5. Shared resolver: `BbCriteriaResolver` (backend) + `resolveBbCriteria` (`configService.ts`), kept in lockstep —
    funded split + tri-party middle-rating band. Wired into `BbCalculationService.advanceRateFraction` /
-   `perLpConc`. **Resolution order (no legacy flat-map fallback):** per-LP `ubsRate`/`ubsConc` override →
+   `perLpConc`. **Resolution order (no legacy flat-map fallback):** per-LP `ubsRate`/`ubsConcLimit` override →
    `bb_criteria_matrix` → (advance rate) **0%** / (conc limit) facility-level limit. The legacy paths were
    removed: `getRateForCls` and `loadClsConcDefaults` are deleted; a classification the matrix does not carry,
    with no explicit per-LP value, contributes 0% advance and falls to the facility conc limit. The

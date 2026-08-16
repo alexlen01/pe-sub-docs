@@ -10,8 +10,18 @@ The script regenerates three CSVs consumed by the *existing* ingest/seed jobs.
 > **The current export is a synthetic simulation.** It has data-quality defects that a **real** LP
 > DB will not have (see §3.1). The design keeps the *transform rules* clean and does the best it can
 > with the defects — **every record is inserted (no rejects)**; whatever needs an analyst's eye is
-> normalized where possible and dumped to a review report. The same script works unchanged on a clean
-> real export (the reports then come back empty).
+> normalized where possible and reported on the **console run summary**. The same script works
+> unchanged on a clean real export (the counts then come back zero).
+
+> **Revised 2026-08-15 — three output files, nothing else.** `data/out/` holds **exactly** the three
+> ingestion CSVs. The review-report files (`unmatched_investor_types.csv`,
+> `unmatched_agent_categories.csv`, `ubs_class_matrix_variance.csv`) and `EXTRACT_SUMMARY.txt` are
+> **retired**; the same information — counts, classification mix, matrix variance, and each unmatched
+> Investor Type / Agent LP Category with its fuzzy suggestion — is printed to the console instead.
+> Likewise the generator writes **only** the export XLSX: the `chaos_log.csv` ground-truth file is
+> retired in favour of a per-column / per-pattern console summary (the same `CHAOS_SEED` reproduces
+> the identical degradation). Stale files from earlier runs are purged. Wherever this document says
+> "report" or "dump" below, read it as **console output**.
 
 ---
 
@@ -28,7 +38,7 @@ The script regenerates three CSVs consumed by the *existing* ingest/seed jobs.
 | D7 | Dates | **Keep the "Collateral Date" field & label; wire it as Last BB Run Date** | `collateral_date := BBDate`. No relabeling. Consolidating the other date columns is out of scope for now. |
 | D8 | UBS credit profile on bootstrap | **Seed `ubs_default_adv_rate` from `UBSAR` and `ubs_default_conc_limit` from `UBSCL`; leave `ubs_classification` blank** | Agent LP category/classification comes **only** from Agent BB (mapped via Config), never from the export's `Classification` column. |
 | D9 | `lp_rates` | **Drop (not needed now)** | Out of scope for the extract — the script never writes it. Removal is a separate Flyway + code-removal refactor (entity/controller/service/repo/tests), tracked as a follow-up. |
-| D10 | Failure mode | **No hard-fail; no rejects; report + counts** | Every record is inserted (orphan accounts get placeholder facilities; unmatched lookups pass through + are dumped for review). A dirty file never aborts the run. |
+| D10 | Failure mode | **No hard-fail; no rejects; console counts** | Every record is inserted (orphan accounts get placeholder facilities; unmatched lookups pass through + are listed on the console summary). A dirty file never aborts the run. |
 
 ---
 
@@ -39,7 +49,7 @@ Seed LP DB Export.xlsx ─┐
 facilities.csv ─────────┤   pe-sub-jobs/scripts/lp_db_extract.py   (one-off, D1)
                         └──▶  parse 32 cols (header-addressed, replaceable map)
                              match AccountID → facilities.csv.account_number
-                             pre-flight validation → rejects report (§3.1)
+                             pre-flight validation → console counts, no rejects (§3.1)
                              emit ▼
         ┌────────────────────────┬───────────────────────────┬──────────────────────────┐
         ▼                        ▼                           ▼
@@ -82,17 +92,17 @@ in Appendix A. Seed-relevant subset:
 - **LP Master (golden):** `InvestorName`, `Parent`, `SPV`, `InvestorType`, `Region`, `HQ`,
   `InstitutionalHNW`, `InvestmentGrade`, `SP`, `Moodys`, `Fitch`, `AUM`, `NAV`, `PensionAssets`, `FundingRatio`.
 
-### 3.1 Simulation data-quality defects (tolerate → report; never drop a record)
+### 3.1 Simulation data-quality defects (tolerate → report on console; never drop a record)
 
 Measured in this file; a real export must not exhibit these. The script **never rejects a record** —
-it does the best it can and dumps what needs analyst attention to a review report:
+it does the best it can and prints what needs analyst attention on its console run summary:
 
 | Defect | Evidence | Handling |
 |---|---|---|
 | Export account not in `facilities.csv` | `5VZ9001`, `5VZ9002` (the sim's `TPG AG` extra accounts) | **Manufacture** an Inactive `"Unknown"`-bank placeholder facility so the LPs still seed (§4). |
 | Fund name shared by many AccountIDs | `TPG AG Asset Based Credit Fund` → 3 AccountIDs | Disambiguate the placeholder name with the AccountID to keep `Facility.name` unique. |
 | **Same LP, contradictory attributes** | All **300** investor names disagree across their ~67 rows (type/region/AUM all randomized) | See §6.2 — per-field majority vote ("best record"); no conflict report. |
-| Free-text Investor Type / Agent LP Category | mis-spellings, non-canonical labels | Normalise to reference lists; pass unmatched through unchanged + dump for review (§6.4). |
+| Free-text Investor Type / Agent LP Category | mis-spellings, non-canonical labels | Normalise to reference lists; pass unmatched through unchanged + list each on the console with a fuzzy suggestion (§6.4). |
 | Dirty size values | `110`, `240B`, `1.33. tn`, `$21 bn+`, `394.6667`, `2T` | Tolerant parse; store as-is; normalize only clean numerics (§7). |
 
 ---
@@ -150,7 +160,8 @@ so the values must live in LP Master (§6).
 ### 5.1 Precision guard-rail
 Short-form applies **only** to the LP Size scale indicator, whose source is already abbreviated and
 which never feeds the BB math. All BB money (commitment, called, uncalled, BB, excess conc) stays at
-full precision per `project_precision_no_rounding`; the `*_num` companion columns are untouched.
+full precision per `project_precision_no_rounding`, held in the `NUMERIC(20,2)` money columns on
+`lp_records` (`cap_commit`, `uncalled_capital`, `aum`, `agent_bb`) as absolute dollars.
 
 ---
 
@@ -165,7 +176,7 @@ the incoming Run-Shadow-BB LP record via `applyLpMasterBaseline`. The **core val
 | Identity | `investorType`, `instVsHnw`, `region`, `spv`, `highQty`, `ig`, `parent` |
 | Ratings | `sp`, `mdy`, `fitch` |
 | Financial scale (LP Size) | `aum`, `nav`, `pension`, `pensionFunded` |
-| UBS credit profile | `cls` (`ubsClassification`), `ubsRate` (`ubsDefaultAdvRate`), `ubsConc` (`ubsDefaultConcLimit`) |
+| UBS credit profile | `cls` (`ubsClassification`), `ubsRate` (`ubsDefaultAdvRate`), `ubsConcLimit` (`ubsDefaultConcLimit`) |
 
 ### 6.1 Repopulation
 Day-1: **clear then reload** `lp_master` with the script's `lp_master.csv` of **distinct LPs**
@@ -219,7 +230,8 @@ ongoing quality is maintained via the LP Master screen + `LpMasterWriteBackServi
    `FoF & Other > $10Bn AUM`; else `Other Institutional` (catch-all — the mapping is **total**, no
    unmatched report). The row's `UBSAR`/`UBSCL` are instead **cross-checked** against the matrix's
    expected AR (funded-split on `CalledPercent`, ≥ 40% inclusive) / CL and deviations beyond
-   ±2.5pp aggregated into `ubs_class_matrix_variance.csv`. The export's `Classification` remains
+   ±2.5pp aggregated per (cls, band, funded bucket) and counted on the console summary.
+   The export's `Classification` remains
    the **agent LP Category**, never UBS classification (`project_agent_cls_vs_invtype`).
 
    **The Floor Map.** Raw `UBSAR` **and** `AgentAR` are slotted into the platform's discrete
@@ -232,12 +244,12 @@ The export's free-text fields are normalised against **editable reference lists 
 (seeded from `classification_config`; keep in sync with Config):
 - **Investor Type** → `INVESTOR_TYPE_OPTS` via `investor_types.csv` + `investor_type_aliases.csv`.
   Case/punctuation-insensitive + alias match; **unmatched values are passed through unchanged** (record
-  always kept) and dumped to `unmatched_investor_types.csv` with a fuzzy suggestion.
+  always kept) and listed on the console summary (value, row count, fuzzy suggestion).
 - **Agent LP Category** (`Classification`) → `AGENT_CLS_OPTS` via `agent_lp_categories.csv`; unmatched
-  passed through and dumped to `unmatched_agent_categories.csv`.
+  passed through and listed on the console the same way.
 - **UBS classification** ← the LP's attributes via the BB Criteria Matrix (`bb_criteria_matrix.csv`,
   §6.3.2 revised); always resolves (Other Institutional catch-all), so there is no UBS unmatched
-  report — off-matrix `UBSAR`/`UBSCL` values are aggregated into `ubs_class_matrix_variance.csv`.
+  list — off-matrix `UBSAR`/`UBSCL` values are aggregated and counted on the console summary.
 - **Advance rates** (`UBSAR`, `AgentAR`) ← the Floor Map (`rate_floor_map.csv`): slotted into the
   discrete 90/75/65/50/0 rate groups (§6.3.2).
 - Nothing is auto-corrected by fuzzy match — suggestions are advisory; analysts curate the reference
@@ -269,15 +281,18 @@ The export's free-text fields are normalised against **editable reference lists 
 - `pe-sub-jobs/scripts/lp_db_extract.ps1` — Windows PowerShell wrapper; `lp_db_extract.sh` — Linux/macOS
   wrapper (each resolves its own dir, picks a Python interpreter, checks `openpyxl`; no args).
   `lp_db_generate.ps1` / `lp_db_generate.sh` — same pair for the generator.
-- **App CSVs in `pe-sub-jobs/data/out/`** — clean N-column (lenient tokenizer): `lp_master.csv`,
-  `lp_facility_seeds.csv`, `facilities.csv` (base + `bank_status` + Active `collateral_date=BBDate`
-  + manufactured Inactive placeholders for orphan accounts).
-- **Review reports in `pe-sub-jobs/data/out/`** (each with a `#` summary, written only when non-empty,
-  stale copies purged each run): `unmatched_investor_types.csv`, `unmatched_agent_categories.csv`,
-  `ubs_class_matrix_variance.csv` (off-matrix UBSAR/UBSCL, aggregated per (cls, band, funded));
-  plus `EXTRACT_SUMMARY.txt`. There is
+- **The three app CSVs in `pe-sub-jobs/data/out/` — and nothing else** (revised 2026-08-15); clean
+  N-column (lenient tokenizer): `lp_master.csv`, `lp_facility_seeds.csv`, `facilities.csv` (base +
+  `bank_status` + Active `collateral_date=BBDate` + manufactured Inactive placeholders for orphan
+  accounts). The whole directory is purged at the start of each write, so a stale file can never
+  reach the ingest jobs.
+- **No report files.** `unmatched_investor_types.csv`, `unmatched_agent_categories.csv`,
+  `ubs_class_matrix_variance.csv` and `EXTRACT_SUMMARY.txt` are **retired** — their content is the
+  console run summary: counts per output, skip reasons, UBS classification mix (LP Master + seed
+  rows), matrix-variance rows beyond ±2.5pp, and every unmatched Investor Type / Agent LP Category
+  with its occurrence count and fuzzy suggestion. There is also
   **no `seed_rejects.csv`** (every record is inserted), **no `lp_master_conflicts.csv`** (best-record
-  consolidation, §6.2), and **no UBS unmatched report** (the matrix waterfall is total, §6.3.2).
+  consolidation, §6.2), and **no UBS unmatched list** (the matrix waterfall is total, §6.3.2).
 
 **Chaos monkey (2026-07-18, relocated same day; see `pe-sub-docs/"AI Chaos Monkey for Data Quality.md"`)**
 - A clean simulated export is "too clean" to verify the extract's assumptions/formats/conversions,
@@ -295,13 +310,14 @@ The export's free-text fields are normalised against **editable reference lists 
   alias-resolvable spellings and genuinely unknown labels); afterthought fields get real noise
   (investor-name suffix drops / ` - Tranche A` / case flips; AUM & PensionAssets unit mix-ups and
   style drift; NAV range/threshold strings like `500M - 2Bn`, `>5B`; nulled UBSCL/FundingRatio).
-- Every mutation lands in the generator's ground-truth log `data/import/<export name>.chaos_log.csv`
-  (`export_row, column, pattern, original, corrupted`) — beside the XLSX, never read by the extract —
-  so what the normalizers absorbed can be verified against what was actually degraded. The
+- Mutations are summarized on the generator's console (total, per column, per pattern); the
+  ground-truth `data/import/<export name>.chaos_log.csv` is **retired** (2026-08-15) so the generator
+  writes only the XLSX — chaos has its own rng, so re-running with the same `CHAOS_SEED` reproduces
+  the identical degradation whenever the detail is needed. The
   name variants intentionally multiply distinct LP Master rows (the entity-resolution problem the
   chaos doc predicts); the rating/size mess exercises the Q2 rating normalizer and the tolerant
   `parse_money_low` parser feeding the matrix waterfall. The extract's `chaos_report.csv` is
-  retired (stale copies are purged on each run).
+  retired as well (stale copies are purged on each run).
 - **Loading:** pe-sub-jobs reads `lp_master.csv`, `lp_facility_seeds.csv` and `facilities.csv`
   directly from `pe-sub-jobs/data/out/` on startup — restart it (or trigger its `/jobs`
   endpoints) after a re-run. No copy into `data/mock/` is needed or wanted.
@@ -330,8 +346,9 @@ The export's free-text fields are normalised against **editable reference lists 
   chaos range/threshold forms); orphan account → manufactured Inactive placeholder + seeds (no
   rejects); reference normalization + matrix classification waterfall (rated band Q2 cases, pension/
   NAV/AUM thresholds, HNW split, Excluded) + Floor-Map boundaries (90/75/65/50/0, inclusive mins) +
-  investor-type/agent unmatched dumps; generator chaos determinism (same `CHAOS_SEED` → same XLSX
-  and chaos log; chaos off → identical clean base dataset).
+  investor-type/agent unmatched counts; generator chaos determinism (same `CHAOS_SEED` → same XLSX
+  and same mutation summary; chaos off → identical clean base dataset); and that a run leaves
+  `data/out/` holding exactly the three ingestion CSVs (stale files purged).
 - **api (done):** `collateral_date` round-trips from a facility ingest (`SeedIngestEndpointsIntegrationTest`);
   `POST /api/lp-master/clear` wipes masters + detaches records, is a no-op when empty, and 403s for a
   non-SERVICE caller (`LpMasterClearIntegrationTest`, 3/3).
@@ -345,7 +362,7 @@ The export's free-text fields are normalised against **editable reference lists 
 2. **§6.3.2 / D8** — ✅ (re-revised 2026-07-18) seed `ubs_default_adv_rate` from `UBSAR` (Floor-Mapped)
    **and** `ubs_default_conc_limit` from `UBSCL`; `ubs_classification` derived from LP attributes via
    the BB Criteria Matrix waterfall (total — never blank); `UBSAR`/`UBSCL` cross-checked against the
-   matrix into `ubs_class_matrix_variance.csv`.
+   matrix and the deviations counted on the console run summary.
 3. **§6.1** — ✅ one FK exists (`lp_records.lp_master_id`, nullable/RESTRICT); use null-refs→delete→reload,
    not a blind truncate.
 4. **§3.1 / §4** — ✅ **100% insertion**: orphan export accounts are manufactured as Inactive `"Unknown"`

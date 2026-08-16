@@ -45,8 +45,8 @@
     },
     {
       "key": "authUser",
-      "value": "local.analyst@ubs.dev",
-      "description": "X-Auth-User value for gateway mode."
+      "value": "js25029",
+      "description": "X-Auth-User value for gateway mode — a uuName, the users-directory key."
     },
     {
       "key": "authRoles",

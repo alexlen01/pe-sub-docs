@@ -12,7 +12,7 @@ info:
     | `pe-sub-extraction` | 3002 | Document extraction — parses XLSX/CSV agent schedules, posts to `/lpRecords/ingest` |
     | `pe-sub-jobs` | 3003 | Spring Batch 6 ingestion jobs — DB-less; parses feed CSVs and posts them to this API's SERVICE-gated ingest/seed endpoints |
 
-    This spec covers `pe-sub-api` (Spring Boot 4.1 / Java 25). The extraction service
+    This spec covers `pe-sub-api` (Spring Boot 4.1 / Java 21). The extraction service
     (`pe-sub-extraction`, port 3002) is documented separately in `pe-sub-docs/openapi-extraction.yaml`.
 
     **Route status legend**
@@ -69,6 +69,11 @@ tags:
     description: Platform configuration — advance rates, eligibility rules, matching thresholds
   - name: notifications
     description: Server-Sent Events stream for real-time broadcast of facility and LP events
+  - name: users
+    description: >
+      Caller identity and the user directory mirrored from the gateway's X-Auth-* headers.
+      Read-only: there is no user-creation endpoint, because the SSO gateway is the source of
+      truth and every authenticated request upserts its own directory entry.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATHS
@@ -331,7 +336,11 @@ paths:
     get:
       tags: [lp-master]
       summary: List all LP Master records
-      description: Bank-wide LP Master store, ordered by UBS classification then investor name.
+      description: >
+        Bank-wide LP Master store, ordered by UBS classification then investor name. Each row
+        carries its resolved hierarchy — `ultimateParent` (the entity a match against this record
+        applies its credit profile from, null when the row is itself ultimate) and `childCount` —
+        so the LP Master Records screen needs no lookup per row.
       operationId: listLpMaster
       responses:
         '200':
@@ -447,6 +456,46 @@ paths:
                 $ref: '#/components/schemas/LpMaster'
         '404':
           description: Not found
+    put:
+      tags: [lp-master]
+      summary: Replace the editable subset of an LP Master record (ANALYST role)
+      description: >
+        The LP Master Records panel's Save. PUT rather than PATCH because the panel always submits
+        every field it renders, so an omitted value means cleared — there is no sparse-merge
+        ambiguity.
+
+
+        Parent linkage accepts either half of the pair: `parentId` wins when present, otherwise
+        `parent` is resolved against `investor_name`. A name that matches no record is retained as
+        display text with `parentId` null (nothing is inherited from it) and links on a later save
+        once the sponsor exists. Renaming a record repoints its children's display string, and
+        saving a record adopts rows that already named it.
+
+
+        Audited as "LP Master Updated".
+      operationId: updateLpMaster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LpMasterUpdateRequest'
+      responses:
+        '200':
+          description: Saved record, with its hierarchy re-resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LpMaster'
+        '400':
+          description: Self-reference, or a link that would close a cycle in the hierarchy
+        '404':
+          description: Not found
     delete:
       tags: [lp-master]
       summary: Hard-delete an LP Master row (manual correction path)
@@ -464,6 +513,56 @@ paths:
       responses:
         '204':
           description: Deleted
+        '404':
+          description: Not found
+
+  /lp-master/{id}/children:
+    get:
+      tags: [lp-master]
+      summary: Direct children of an LP Master record
+      description: >
+        The feeders/SPVs whose `parent_id` points at this record — one level only, not the whole
+        subtree. Hierarchy context for the LP Master Records panel.
+      operationId: listLpMasterChildren
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Direct children
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LpMaster'
+        '404':
+          description: Not found
+
+  /lp-master/{id}/aliases:
+    get:
+      tags: [lp-master]
+      summary: Accepted Agent BB spellings recorded against an LP Master record
+      description: >
+        The matching feedback loop. Each accepted match stores the uploaded Agent BB string here
+        (canonicalised — trimmed, whitespace-collapsed, upper-cased), so the next upload carrying
+        it resolves exactly at score 100 without fuzzy scoring, while still running parent routing.
+      operationId: listLpMasterAliases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Alias strings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
         '404':
           description: Not found
 
@@ -522,6 +621,9 @@ paths:
       description: >
         When `agentCls` or `cls` differs from the persisted value, the API automatically sets the
         record's sticky `rcl` reclassified flag. Clients do not need a separate reclassify action.
+        Marking is deferred until the facility's current submission has a Shadow BB snapshot:
+        during the Upload Agent BB wizard (steps 1–5) a category change is initial data entry with
+        no run to invalidate, so `rcl` stays as it was. The flag is never cleared by this rule.
       operationId: updateLP
       parameters:
         - $ref: '#/components/parameters/IdPath'
@@ -870,7 +972,9 @@ paths:
         agent-reported abb (ingest-written) is never modified by a run. A body-less POST re-runs
         the engine over the persisted records. The record-level `rcl` status is sticky: an
         incoming stale `false` value cannot clear a reclassification detected during Save, and
-        every new snapshot/report result retains the persisted flag.
+        every new snapshot/report result retains the persisted flag. The submission's *first* run
+        ignores an incoming `rcl: true` outright — there is no earlier Shadow BB for a category
+        change to invalidate; re-runs honour it.
       operationId: runBB
       parameters:
         - $ref: '#/components/parameters/FacilityIdPath'
@@ -983,7 +1087,7 @@ paths:
                     items:
                       type: object
                       properties:
-                        cls:
+                        ubsLpCategory:
                           type: string
                           description: LP category label (legacy tiers first, canonical order)
                         count:
@@ -992,9 +1096,11 @@ paths:
                           type: number
                         ubbM:
                           type: number
-                        rate:
-                          type: string
-                          description: UBS advance rate for the tier, e.g. "90%"
+                        ubsAdvanceRate:
+                          type: number
+                          description: >
+                            UBS advance rate for the tier as a raw fraction (0.9 = 90%);
+                            the consumer formats it.
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1757,6 +1863,22 @@ paths:
                 $ref: '#/components/schemas/MatchQueueItem'
         '404':
           $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [matching]
+      summary: Discard a match queue row
+      description: >
+        Removes the queue entry for an Agent BB row the analyst judges badly parsed, so no
+        accept/reject decision carries it forward: Commit Decisions creates no LP record for it and
+        it never reaches the Shadow BB. The submission's extracted row is left in place — re-running
+        matching for the submission recreates the entry.
+      operationId: discardMatchQueueEntry
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Match queue entry discarded
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /matching/thresholds:
     get:
@@ -1791,7 +1913,7 @@ paths:
       tags: [extraction]
       summary: Import a structured BB template workbook (XLSX)
       description: >
-        Imports a `BB-Template-Import-*.xlsx` workbook and creates the corresponding
+        Imports a BB template `*.xlsx` workbook and creates the corresponding
         `bb_templates` row (with tabs). With `mode=upsert` an existing template with the
         same `template_slug` is replaced instead of rejected, making the import idempotent —
         this is how `pe-sub-jobs` pushes workbooks from its watched `data/bb-templates/`
@@ -2039,6 +2161,68 @@ paths:
               schema:
                 type: string
 
+  # ── Users ───────────────────────────────────────────────────────────────────
+
+  /users/me:
+    get:
+      tags: [users]
+      summary: The caller's own identity
+      operationId: getCurrentUser
+      description: >
+        Resolved from the request principal (the gateway's X-Auth-* headers, or the fixed dev
+        identity in dev mode) — never a database read, so it works before any directory row exists.
+        `role` is the display label, e.g. "Account/Transaction Manager" for MANAGER.
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentUser' }
+              example:
+                uuName: le05751
+                firstName: Alex
+                lastName: Len
+                email: alex.len@ubs.com
+                role: Analyst
+
+  /users:
+    get:
+      tags: [users]
+      summary: All users who have authenticated
+      operationId: listUsers
+      description: >
+        The directory mirrored from the gateway, for rendering a person's name alongside a stored
+        uuName (submission owner, maker/checker, audit entry). Sorted by last name, then first
+        name, then uuName. Any authenticated role may read it.
+      responses:
+        '200':
+          description: Directory entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+
+  /users/{uuName}:
+    get:
+      tags: [users]
+      summary: One directory entry by stable identity
+      operationId: getUserByUuName
+      parameters:
+        - name: uuName
+          in: path
+          required: true
+          schema: { type: string }
+          example: le05751
+      responses:
+        '200':
+          description: Directory entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 # ─────────────────────────────────────────────────────────────────────────────
 # COMPONENTS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2081,6 +2265,12 @@ components:
   # ── Responses ────────────────────────────────────────────────────────────────
 
   responses:
+    BadRequest:
+      description: Request is malformed or fails validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     NotFound:
       description: Resource not found
       content:
@@ -2118,6 +2308,35 @@ components:
     InvestorType:
       type: string
       enum: [Institutional, HNW]
+
+    # ── Identity ───────────────────────────────────────────────────────────────
+
+    CurrentUser:
+      type: object
+      required: [uuName, role]
+      description: The caller's own identity, resolved from the request principal.
+      properties:
+        uuName:    { type: string, description: 'Stable authentication identity, e.g. le05751', example: le05751 }
+        firstName: { type: string }
+        lastName:  { type: string }
+        email:     { type: string }
+        role:      { type: string, description: 'Display label — Analyst, Account/Transaction Manager, Viewer, or Service', example: Analyst }
+
+    User:
+      type: object
+      required: [uuName, displayName, role]
+      description: >
+        A directory entry, mirrored from the gateway's X-Auth-* headers on each authenticated
+        request. Not a credential record — there is no password, and the API never authenticates
+        anyone itself.
+      properties:
+        uuName:      { type: string, maxLength: 50, description: 'Stable authentication identity and natural key. Normally 7 alphanumeric characters; the extra width is headroom for system/override identities', example: le05751 }
+        firstName:   { type: string, description: 'Empty when the gateway sent no first-name header' }
+        lastName:    { type: string }
+        displayName: { type: string, description: 'Pre-composed "First Last", falling back to uuName when no name was supplied', example: Alex Len }
+        email:       { type: string, description: 'Empty when the gateway sent no email header' }
+        role:        { type: string, enum: [Manager, Analyst, Viewer], description: 'Highest-privilege human role asserted by the gateway. SERVICE principals are never stored.' }
+        lastSeenAt:  { type: string, format: date-time, description: 'Refreshed on a throttle (10 min), not on every request' }
 
     # ── Core records ───────────────────────────────────────────────────────────
 
@@ -2159,7 +2378,6 @@ components:
         parent:        { type: string, nullable: true }
         spv:           { type: boolean }
         hq:            { type: boolean }
-        fundSleeve:    { type: string, nullable: true, description: Fund sleeve the LP commits through; each workbook sheet is an independent sleeve }
         type:          { $ref: '#/components/schemas/InvestorType' }
         region:        { $ref: '#/components/schemas/Region' }
         ig:            { type: boolean, description: Investment Grade flag }
@@ -2171,25 +2389,27 @@ components:
         sp:            { type: string, default: NR }
         mdy:           { type: string, default: NR }
         fitch:         { type: string, default: NR }
-        # Financial scale (formatted strings e.g. "$3.8B")
-        aum:           { type: string, nullable: true }
+        # Financial scale. aum is stored NUMERIC (absolute dollars) and rendered at full precision
+        # on the way out — never re-abbreviated, so "$4.2B" in returns as "$4,200,000,000".
+        # nav/pension/pensionFunded are VARCHAR passthrough and keep the submitted text verbatim.
+        aum:           { type: string, nullable: true, description: 'Full-precision AUM e.g. "$4,200,000,000"' }
         nav:           { type: string, nullable: true }
         pension:       { type: string, nullable: true }
         pensionFunded: { type: string, nullable: true }
         # Commitment data
-        capCommit:     { type: string, nullable: true, description: Capital commitment e.g. "$250.0M" }
+        capCommit:     { type: string, nullable: true, description: 'Capital commitment, full precision e.g. "$250,000,000"' }
         pctCapCommit:  { type: string, nullable: true }
         calledCap:     { type: string, nullable: true }
         # Uncalled capital
-        uc:            { type: string, description: Uncalled capital e.g. "$28.4M" }
+        uc:            { type: string, description: 'Uncalled capital, full precision e.g. "$28,400,000"' }
         pctUncalled:   { type: string, nullable: true }
         pctCalled:     { type: string, nullable: true }
         # Concentration & BB
-        agentConc:     { type: string, nullable: true }
-        ubsConc:       { type: string, nullable: true, description: Per-LP UBS concentration limit as a percent of total uncalled capital e.g. "7.5%" }
+        agentConcLimit: { type: string, nullable: true, description: 'Per-LP agent concentration limit as a percent of total uncalled capital e.g. "10%"' }
+        ubsConcLimit:  { type: string, nullable: true, description: 'Per-LP UBS concentration limit — either a percent of total uncalled capital ("7.5%") or an absolute dollar cap ("$25,000,000"). Stored NUMERIC; the two are told apart by magnitude (>= 100,000 is dollars).' }
         ubsRate:       { type: string, nullable: true, description: Per-LP UBS advance rate percent e.g. "90%" (matrix-resolved default or manual override); persisted so it round-trips to LP Master }
         agentRate:     { type: string, nullable: true }
-        abb:           { type: string, default: '$0', description: Agent-submitted borrowing base }
+        abb:           { type: string, nullable: true, description: 'Agent-submitted borrowing base, full precision e.g. "$12,500,000"' }
         rank:          { type: integer, nullable: true, description: Uncalled-capital rank within the facility; computed and persisted by the Shadow BB run }
         # Status flags
         inc:           { type: boolean, description: UBS Included flag }
@@ -2203,30 +2423,75 @@ components:
       type: object
       description: >
         Bank-wide LP Master record — the standardized upstream LP reference shared across
-        facilities. Distinct from LP (a per-facility record). Field names use snake_case for
-        investor_type / inst_vs_hnw / region_location to match the persisted contract.
-      required: [id, name, cls]
+        facilities. Distinct from LP (a per-facility record). Keys mirror LpMasterDto, and where
+        the same fact exists on both, LpRecordDto, so a screen can render either without a mapping
+        layer.
+
+
+        Hierarchy: `parent` is the sponsor name as displayed and ingested, `parentId` the resolved
+        self-reference, and `ultimateParent` the top of the chain — the entity whose credit profile
+        a match against this record applies. A `parent` set with `parentId` null names a sponsor
+        that is not (yet) an LP Master record, so nothing is inherited from it.
+      required: [id, investorName]
       properties:
-        id:              { type: integer }
-        name:            { type: string }
-        parent:          { type: string, nullable: true }
-        spv:             { type: boolean }
-        hq:              { type: boolean }
-        investor_type:   { type: string, nullable: true, description: Industry/sector profile e.g. "Pension Fund" }
-        inst_vs_hnw:     { type: string, nullable: true }
-        region_location: { type: string, nullable: true }
-        ig:              { type: boolean, description: Investment Grade flag }
-        cls:             { $ref: '#/components/schemas/LPClassification' }
-        sp:              { type: string, default: NR }
-        mdy:             { type: string, default: NR }
-        fitch:           { type: string, default: NR }
-        aum:             { type: string, nullable: true }
-        nav:             { type: string, nullable: true }
-        pension:         { type: string, nullable: true }
-        pensionFunded:   { type: string, nullable: true }
-        rate:            { type: string, nullable: true, description: UBS default advance rate e.g. "90%" }
-        ubsConc:         { type: string, nullable: true, description: UBS default concentration limit percent e.g. "7.5%" }
-        notes:           { type: string, nullable: true }
+        id:                 { type: integer }
+        investorName:       { type: string }
+        parent:             { type: string, nullable: true, description: Sponsor name as displayed; may be set with parentId null }
+        parentId:           { type: integer, nullable: true, description: Resolved self-reference to the sponsor row; null on an ultimate entity }
+        isUltimateParent:   { type: boolean, description: Mirrors parentId being null }
+        ultimateParent:     { type: string, nullable: true, description: Top of the parent chain; null when this record is itself ultimate }
+        childCount:         { type: integer, description: Direct children (feeders/SPVs) pointing at this record }
+        spv:                { type: boolean }
+        highQuality:        { type: boolean }
+        investorType:       { type: string, nullable: true, description: Industry/sector profile e.g. "Pension Fund" }
+        institutionalOrHnw: { type: string, nullable: true }
+        regionLocation:     { type: string, nullable: true }
+        investmentGrade:    { type: boolean }
+        ubsLpCategory:      { type: string, nullable: true, description: The bank's BB risk bucket — not the LP's regulatory classification }
+        spRating:           { type: string }
+        moodysRating:       { type: string }
+        fitchRating:        { type: string }
+        aum:                { type: string, nullable: true }
+        nav:                { type: string, nullable: true }
+        pensionAssets:      { type: string, nullable: true }
+        fundingRatio:       { type: number, nullable: true, description: Fraction, not percent — 0.9100 is 91% }
+        ubsDefaultAdvanceRate: { type: number, nullable: true, description: Fraction, not percent — 0.9000 is 90% }
+        ubsDefaultConcentrationLimit:
+          type: string
+          nullable: true
+          description: >
+            Percent-or-dollars display text ("7.5%", "$25,000,000"), exactly as the per-record
+            limits are — it is not on the fraction scale.
+        notes:              { type: string, nullable: true }
+
+    LpMasterUpdateRequest:
+      type: object
+      description: >
+        The editable subset of an LP Master record. A full replace, not a sparse patch: the panel
+        always submits every field it renders, so null means "clear this value". Server-managed
+        facts (id, timestamps, isUltimateParent, ultimateParent, childCount) are not accepted.
+      required: [investorName]
+      properties:
+        investorName:       { type: string, minLength: 1 }
+        parent:             { type: string, nullable: true }
+        parentId:           { type: integer, nullable: true, description: Wins over `parent` when present }
+        spv:                { type: boolean }
+        highQuality:        { type: boolean }
+        investmentGrade:    { type: boolean }
+        investorType:       { type: string, nullable: true }
+        institutionalOrHnw: { type: string, nullable: true }
+        regionLocation:     { type: string, nullable: true }
+        ubsLpCategory:      { type: string, nullable: true }
+        spRating:           { type: string, nullable: true }
+        moodysRating:       { type: string, nullable: true }
+        fitchRating:        { type: string, nullable: true }
+        aum:                { type: string, nullable: true }
+        nav:                { type: string, nullable: true }
+        pensionAssets:      { type: string, nullable: true }
+        fundingRatio:       { type: number, nullable: true, description: Fraction — 0.9100 is 91% }
+        ubsDefaultAdvanceRate: { type: number, nullable: true, description: Fraction — 0.9000 is 90% }
+        ubsDefaultConcentrationLimit: { type: string, nullable: true, description: Percent-or-dollars display text }
+        notes:              { type: string, nullable: true }
 
     LPPatch:
       type: object
@@ -2237,18 +2502,13 @@ components:
         clsTag:     { type: string, description: CSS tag class e.g. tag-rated }
         abb:        { type: string, description: Agent-submitted borrowing base value }
         agentRate:  { type: string }
-        agentConc:  { type: string }
-        ubsConc:    { type: string }
+        agentConcLimit: { type: string }
+        ubsConcLimit:   { type: string }
         inc:        { type: boolean }
         rcl:        { type: boolean }
         notes:      { type: string }
 
     # ── Borrowing Base ─────────────────────────────────────────────────────────
-
-    BBParams:
-      type: object
-      properties:
-        concLimitM: { type: number, description: Per-LP concentration limit in $M, example: 25 }
 
     BBSummary:
       type: object
@@ -2265,8 +2525,8 @@ components:
           description: >
             Total Agent Borrowing Base ($M). Formula: sum(all LPs, abbM).
             abbM is the agent-reported BB figure extracted from the schedule when stored
-            (including an explicit "$0"); otherwise the engine derives it as
-            MIN(uncalled, total uncalled × agentConc) × agentRate (0 for excluded LPs).
+            (including an explicit 0); otherwise the engine derives it as
+            MIN(uncalled, total uncalled × agentConcLimit) × agentRate (0 for excluded LPs).
         bbDelta:
           type: number
           description: >
@@ -2595,6 +2855,15 @@ components:
         facilityName:  { type: string, description: Facility name resolved for display }
         agentName:     { type: string, description: Extracted investor name from the document }
         masterName:    { type: string, nullable: true, description: Best-matched LP Master name, or masterNameOverride if set }
+        masterLpId:    { type: integer, nullable: true, description: LP Master id of the proposed match — always the matched child/feeder, never its parent }
+        agentParent:   { type: string, nullable: true, description: Sponsor named by the agent document; feeds the Parent/Sponsor corroboration signal }
+        masterParent:
+          type: string
+          nullable: true
+          description: >
+            The ultimate entity the proposed match routes to — whose credit profile an Accept would
+            apply. Null means the match is itself the ultimate entity, which the Review Matches
+            screen renders as "Self". Re-resolved when an analyst overrides the match.
         score:         { type: integer, description: Combined similarity score 0–100 }
         decision:      { type: string, enum: [Pending, Accepted, Rejected, Manual], description: Current decision (capitalised) }
         status:        { type: string, description: Mirrors decision for UI display }
@@ -2666,14 +2935,6 @@ components:
       properties:
         cls:  { type: string }
         rate: { type: string }
-
-    EligibilityRule:
-      type: object
-      properties:
-        id:     { type: string }
-        rule:   { type: string }
-        value:  { type: string }
-        active: { type: boolean }
 
     EligibilityConfig:
       type: object

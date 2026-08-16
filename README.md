@@ -21,8 +21,8 @@ Architecture documentation and API specification for the PE Sub Borrowing Base P
 | Repo | Description |
 |---|---|
 | [pe-sub-ui](https://github.com/alexlen01/pe-sub-ui) | React / TypeScript frontend |
-| [pe-sub-api](https://github.com/alexlen01/pe-sub-api) | Spring Boot 4.1 / Java 25 REST API |
-| [pe-sub-extraction](https://github.com/alexlen01/pe-sub-extraction) | Spring Boot 4.1 / Java 25 document extraction service |
-| [pe-sub-jobs](https://github.com/alexlen01/pe-sub-jobs) | Spring Boot 4.1 / Java 25 / Spring Batch 6 CSV ingestion jobs |
+| [pe-sub-api](https://github.com/alexlen01/pe-sub-api) | Spring Boot 4.1 / Java 21 REST API |
+| [pe-sub-extraction](https://github.com/alexlen01/pe-sub-extraction) | Spring Boot 4.1 / Java 21 document extraction service |
+| [pe-sub-jobs](https://github.com/alexlen01/pe-sub-jobs) | Spring Boot 4.1 / Java 21 / Spring Batch 6 CSV ingestion jobs |
 | [pe-sub-infra](https://github.com/alexlen01/pe-sub-infra) | Kubernetes manifests (local cluster; AKS evolution pending) |
 | [pe-sub-platform](https://github.com/alexlen01/pe-sub-platform) | Working prototype (requirements reference) |

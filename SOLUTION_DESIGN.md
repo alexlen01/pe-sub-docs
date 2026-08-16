@@ -155,9 +155,9 @@ What previously took a credit officer two to three days per submission — downl
 | Repo | Purpose |
 |------|---------|
 | `pe-sub-ui` | React / TypeScript / Vite frontend. Domain types (`LP`, `Facility`, `BBResult`, etc.) live in `src/types/` |
-| `pe-sub-api` | Spring Boot 4.1 / Java 25 REST API — business logic, route handlers, JPA / DB access |
-| `pe-sub-extraction` | Spring Boot 4.1 / Java 25 document extraction service — parses XLSX/CSV agent schedules, returns structured LP records to `pe-sub-api`; maintains BB template registry |
-| `pe-sub-jobs` | Spring Boot 4.1 / Java 25 / Spring Batch 6 ingestion jobs service — CSV upserts (`facility-ingest`, `lp-master-ingest`) into the shared PostgreSQL |
+| `pe-sub-api` | Spring Boot 4.1 / Java 21 REST API — business logic, route handlers, JPA / DB access |
+| `pe-sub-extraction` | Spring Boot 4.1 / Java 21 document extraction service — parses XLSX/CSV agent schedules, returns structured LP records to `pe-sub-api`; maintains BB template registry |
+| `pe-sub-jobs` | Spring Boot 4.1 / Java 21 / Spring Batch 6 ingestion jobs service — CSV upserts (`facility-ingest`, `lp-master-ingest`) into the shared PostgreSQL |
 | `pe-sub-infra` | Kubernetes manifests for local cluster (Docker Desktop / Rancher Desktop) and managed Kubernetes deployment |
 | `pe-sub-docs` | Solution design, OpenAPI specification (`openapi.yaml` v0.8.0), and Postman/Talend API collection |
 | `pe-sub-platform` | Working prototype only — used to gather and refine requirements; not deployed to production |
@@ -182,7 +182,7 @@ Contains Kubernetes manifests for a local cluster (Docker Desktop / Rancher Desk
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
-| Language | Java 25 (LTS) | All three backend services (upgraded from Java 21, July 2026) |
+| Language | Java 21 (LTS) | All three backend services. Briefly on Java 25 (July 2026); reverted to the Java 21 LTS baseline August 2026 |
 | Runtime | Spring Boot 4.1 | All three backend services (upgraded from Boot 3.5, July 2026). Modularized auto-configuration: Flyway needs `spring-boot-starter-flyway`; MockMvc tests need `spring-boot-starter-webmvc-test`; `@WithMockUser` needs `spring-boot-starter-security-test` |
 | Build tool | Maven 3.9 | Maven Wrapper removed during the Boot 4.1 upgrade — builds require a local Maven install |
 | ORM / persistence | Spring Data JPA (Hibernate 7) | `pe-sub-api` and `pe-sub-extraction` |
@@ -244,8 +244,8 @@ Defined by Flyway SQL migrations in `pe-sub-api/src/main/resources/db/migration/
 
 | File | Contents |
 |------|----------|
-| `V1_1__schema.sql` | All DDL — `users`, `facilities` (incl. operational metadata: `account_number`, `loan_amount`, `maturity_date`, `collateral_date`, `bank_status`, `bank_status_date`), `lp_records` (incl. `fund_sleeve` and the four precise-money `*_num` columns), `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables (`bb_templates` / `bb_template_tabs` / `bb_template_groups`, slug- and class-keyed) |
-| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`; the `classification_config` and per-LP `cls_conc_limit_defaults`/`cls_conc_limit_bounds` are seeded in `V1_3__config.sql`); FM Dictionary — canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), aliases, blocklist, suggestions; LP rates feed (`source='SIMULATED'`). Template registry rows are **not** seeded — templates enter exclusively via `POST /api/bb-templates/import` (`BB-Template-Import-*.xlsx`) |
+| `V1_1__schema.sql` | All DDL — `users`, `facilities` (incl. operational metadata: `account_number`, `loan_amount`, `maturity_date`, `collateral_date`, `bank_status`, `bank_status_date`), `lp_records` (incl. the four precise-money `NUMERIC` columns and the `*_conc_limit` pair), `bb_snapshots`, `config`, `submissions` (incl. `wizard_step` / `shadow_bb_overrides`), `audit_log`, `lp_rates`, `submission_extractions`, `match_queue_entries`, FM Dictionary tables, BB template registry tables (`bb_templates` / `bb_template_tabs` / `bb_template_groups`, slug- and class-keyed) |
+| `V1_2__seed.sql` | Config seed (`busa_tiers`, `agent_tiers`, `agent_rate_params`, `elig_rules`, `conc_limits`, `global_settings`, `matching_config`; the `classification_config` and per-LP `cls_conc_limit_defaults`/`cls_conc_limit_bounds` are seeded in `V1_3__config.sql`); FM Dictionary — canonical fields (incl. **Agent LP Classification** + derived **UBS LP Classification**), aliases, blocklist, suggestions; LP rates feed (`source='SIMULATED'`). Template registry rows are **not** seeded — templates enter exclusively via `POST /api/bb-templates/import` (BB template `*.xlsx` workbooks) |
 | `V1_3__config.sql` | Database-owned UI/domain configuration: `classification_config` (CLS/Agent CLS/UBS CLS option lists, UBS default rates, agent-rate→UBS-tier mapping, Agent→UBS CLS map) and further config keys; `matching_config` regex expansion patch |
 | `V1_4__report_history.sql` | `report_history` table — one row per generated report from the Reports screen; `facility_name` denormalised, `facility_id` soft link (`ON DELETE SET NULL`) |
 
@@ -253,13 +253,22 @@ To make a schema change: add a new `V1_N__description.sql` (or `V2_1__` for the 
 
 ### `users`
 
+Directory of people who have authenticated, mirrored from the gateway's `X-Auth-*` headers on
+each authenticated request (`UserDirectoryService`). Not a credential store — no password column,
+and the API never authenticates anyone itself. Exists so screens can turn a stored uuName into a
+person without a corporate-directory lookup.
+
 | Column | Type | Notes |
 |--------|------|-------|
 | id | serial PK | |
-| email | varchar(255) unique | |
-| name | varchar(255) | |
-| role | varchar(50) | `Analyst` \| `Account/Transaction Manager` |
+| uu_name | varchar(50) unique | Stable authentication identity (e.g. `le05751`) — the natural key; email and surname both change over time. A real uuName is 7 alphanumeric chars; the width is headroom for system/override identities |
+| first_name | varchar(255) | Empty when the gateway sent no header; a blank never overwrites a known value |
+| last_name | varchar(255) | Same |
+| email | varchar(255) | Same |
+| role | varchar(50) | Highest-privilege human role asserted: `Manager` \| `Analyst` \| `Viewer`. SERVICE principals are never stored |
 | created_at | timestamp | |
+| updated_at | timestamp | Bumped only when an attribute actually changed |
+| last_seen_at | timestamp | Refreshed on a 10-minute throttle, not on every request |
 
 ### `facilities`
 
@@ -287,18 +296,20 @@ Column naming aligned with LP Master schema: API/DTO field names (e.g. `cls`, `u
 
 | Group | DB columns |
 |-------|---------|
-| Identity & Classification | investor_name, parent, spv, high_qty, inv_type, region, investment_grade, classification, classification_tag, agent_cls, fund_sleeve |
+| Identity & Classification | investor_name, parent, spv, high_qty, inv_type, region, investment_grade, classification, classification_tag, agent_cls |
 | Ratings | sp, mdy, fitch |
 | Financial Scale | aum, nav, pension, pension_funded |
 | Commitment Data | cap_commit, pct_cap_commit, called_cap |
 | Uncalled / Eligible Capital | uncalled_capital, pct_uncalled, pct_called |
-| Concentration & BB | agent_conc, ubs_conc, agent_excess_conc, ubs_excess_conc, agent_rate, ubs_rate, agent_bb, ubs_bb |
+| Concentration & BB | agent_conc_limit, ubs_conc_limit, agent_excess_conc, ubs_excess_conc, agent_rate, ubs_rate, agent_bb, ubs_bb |
 | Status | included, rcl, recallable_dist, transferee, source_seq |
 | Meta | notes, facility_id (FK → facilities), created_at, updated_at |
 
 Note: `rate` (BUSA advance rate) and computed fields (`ubb`, `delta`, `uec`) are **not stored** — they are derived at runtime by the BB engine from `cls` and `uc`. Only `abb` (agent's submitted BB value) is stored as a source field.
 
-**Precise money columns (dual-write).** Four money fields carry a `NUMERIC(20,2)` companion column holding exact absolute dollars alongside the formatted display string: `uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num`. Write paths keep both in sync — extraction ingest persists the exact extracted decimal plus the rounded display string (`"$12.3M"`); a Shadow BB commit re-derives the numerics from the committed strings and clears stale values. The BB engine computes from the numeric column when present and falls back to parsing the display string otherwise, so calculations are exact-dollar rather than re-parsed from rounded labels. The `*_num` columns are internal — never exposed on a DTO (resolves former Gap G10 for calculation purposes).
+**Precise money columns.** The four money fields on `lp_records` are single `NUMERIC(20,2)` columns holding exact absolute dollars — `uncalled_capital`, `cap_commit`, `aum`, `agent_bb`. There is no formatted display-string sibling; the earlier dual-write `*_num` companions were consolidated away (August 2026). Write paths parse inbound strings to exact dollars (`MoneyValues.dollars`), the BB engine computes straight off the numeric (`BbCalculationService.dollarM`), and DTOs format for display on the way out (`MoneyValues.display`) at full precision — so an abbreviated input such as `"$4.2B"` is served back as `"$4,200,000,000"` and never re-abbreviated. `lp_master` keeps its financial-scale fields as VARCHAR display strings, so writes across that boundary convert explicitly. The API/UI contract stays string-typed (resolves former Gap G10).
+
+**Concentration limits.** `agent_conc_limit` / `ubs_conc_limit` (renamed from `agent_conc` / `ubs_conc`, August 2026) are `NUMERIC` and hold either a percentage of total uncalled capital (`7.5` = 7.5%) or an absolute dollar cap (`25000000` = $25M). The two are told apart by magnitude at `BbCalculationService.ABSOLUTE_DOLLAR_MIN` (100,000) — the same threshold `parseMoney` applies to suffix-less strings.
 
 ### Reference Extract — `LP DB Export 2026.06.25.xlsx`
 
@@ -335,15 +346,15 @@ reference** for `lp_records` (joined to `facilities`). Single sheet `_BBs2026062
 | 19 | `FundingRatio` | `pension_funded` (funded ratio) | Decimal, e.g. `1.9` |
 | 20 | `UBSAR` | `ubs_rate` (UBS Advance Rate) | **Decimal fraction** `0.41` = 41% (note: DTO carries `"90%"` strings; config carries whole-number `90`) |
 | 21 | `AgentAR` | `agent_rate` | Decimal fraction |
-| 22 | `Commitments` | `cap_commit` / `cap_commit_num` | **Raw absolute dollars** `484000000` |
+| 22 | `Commitments` | `cap_commit` | **Raw absolute dollars** `484000000` |
 | 23 | `PercentOfCommitments` | `pct_cap_commit` | Decimal fraction `0.09` |
 | 24 | `Called` | `called_cap` | Raw absolute dollars |
-| 25 | `Uncalled` | `uncalled_capital` / `uncalled_capital_num` | Raw absolute dollars |
+| 25 | `Uncalled` | `uncalled_capital` | Raw absolute dollars |
 | 26 | `PercentOfUncalled` | `pct_uncalled` | Decimal fraction |
 | 27 | `CalledPercent` | `pct_called` | Decimal fraction |
-| 28 | `AgentCL` | `agent_conc` | Concentration limit as decimal fraction `0.14` |
-| 29 | `UBSCL` | `ubs_conc` | Concentration limit as decimal fraction |
-| 30 | `AgentBB` | `agent_bb` (`abb`) / `agent_bb_num` | Raw absolute dollars |
+| 28 | `AgentCL` | `agent_conc_limit` | Concentration limit as decimal fraction `0.14` |
+| 29 | `UBSCL` | `ubs_conc_limit` | Concentration limit as decimal fraction |
+| 30 | `AgentBB` | `agent_bb` (`abb`) | Raw absolute dollars |
 | 31 | `UBSBB` | `ubs_bb` (`ubb`) | Raw absolute dollars |
 | 32 | `BBDate` | snapshot / collateral as-of date | US-format string `M/D/YYYY`, varies per facility (e.g. `4/30/2026`, `11/26/2025`) |
 
@@ -353,8 +364,8 @@ reference** for `lp_records` (joined to `facilities`). Single sheet `_BBs2026062
   which is a third representation alongside the DTO's `"90%"` strings and config's whole-number
   `90`. Any importer of this export must normalise fraction → the platform's stored form.
 - **`AUM` / `NAV` / `PensionAssets` are unnormalised free text** with mixed units
-  (`$700Mn`, `$4.8 bn`, `2T`) — direct evidence for the display-string-plus-`*_num`-companion
-  design and the extraction normalisation burden.
+  (`$700Mn`, `$4.8 bn`, `2T`) — direct evidence for the extraction normalisation burden, and why
+  `aum` is parsed to a `NUMERIC` column on `lp_records` while `nav` / `pension` stay free text.
 - **Umbrella facilities** (`[U]`) confirm that one `AccountID` can span multiple sub-funds —
   relevant to the multi-fund dedup open question (§8) and to the segmentation proposal below.
 - **No `Committed` / `Uncommitted` column and no `Tranche` column exist in the export.** The
@@ -468,7 +479,7 @@ Auto-learned template registry keyed by agent bank. On first confirmed extractio
 | event | varchar(100) | Not null. One of: `BB Recalculated`, `LP Reclassified`, `LP Data Updated`, `Upload`, `Export`, `Config Change`, `Match Config Change`, `Login`, `Field Mapping Change`, `Abort`, `Re-extraction`, `Extraction Confirmed` |
 | detail | text nullable | Human-readable event detail; format varies by event type (see §5 Audit) |
 | facility_id | integer FK → facilities nullable | Null for non-facility-scoped events (e.g. Login, Config Change) |
-| user_id | integer FK → users nullable | Reserved for auth integration; not yet populated |
+| user_id | integer FK → users nullable | Legacy; still not populated. Attribution is by `user_name`/`user_display` strings so an audit row never dangles or changes if a directory row is removed |
 | user_name | varchar(100) nullable | Display name of the actor stored at write time; decoupled from users FK |
 | ip | varchar(45) nullable | Client IP — resolved from `X-Forwarded-For` header if present, else `remoteAddr` |
 | created_at | timestamp | Set by `@PrePersist`; not updatable |
@@ -554,8 +565,8 @@ Stateless header/token security (`SecurityConfig` + `GatewayAuthenticationFilter
 
 | Mode | Identity source | Use |
 |------|-----------------|-----|
-| `dev` (default) | Fixed identity `local.analyst@ubs.dev` with role `ANALYST` (`app.security.dev-user` / `APP_SECURITY_DEV_USER`) | Local development — header-less UI works unchanged |
-| `gateway` | `X-Auth-User` / `X-Auth-Roles` headers injected by the SSO reverse proxy (Entra ID at the gateway) | Deployed environments — enabling enforcement is one config flag |
+| `dev` (default) | Fixed identity `js25029` with role `ANALYST` (`app.security.dev-user` / `APP_SECURITY_DEV_USER`). A uuName rather than an email, so a local run produces a `users` directory row shaped like a real one | Local development — header-less UI works unchanged |
+| `gateway` | `X-Auth-User` / `X-Auth-First-Name` / `X-Auth-Last-Name` / `X-Auth-Email` / `X-Auth-Roles` headers injected by the SSO reverse proxy (Entra ID at the gateway) | Deployed environments — enabling enforcement is one config flag |
 
 Roles: `ANALYST` (operator + configurator), `MANAGER` (Account/Transaction Manager — review authority), `SERVICE` (service-to-service). Authorization rules:
 
@@ -592,7 +603,7 @@ Sessions and CSRF are disabled (stateless); unauthenticated requests receive `40
 
 | Action | Condition | Effect |
 |--------|-----------|--------|
-| **Updated** | Score ≥ auto-accept threshold AND `!requiresReview` AND all fields ≥ 70% confidence | Writes `aum`, `capCommit`, `uc`, `agentRate`, `agentConc` on the matched LP |
+| **Updated** | Score ≥ auto-accept threshold AND `!requiresReview` AND all fields ≥ 70% confidence | Writes `aum`, `capCommit`, `uc`, `agentRate`, `agentConcLimit` on the matched LP |
 | **Queued** | Medium-confidence match OR low-confidence extraction fields | No data written; returned for credit officer review |
 | **Skipped** | Score below review threshold or no investor name extracted | No action |
 
@@ -842,7 +853,7 @@ The platform operates with **two roles** — **Analyst** and **Account/Transacti
 | G7 | **`_eligCache` stale after Configuration screen saves** | Saving config, then navigating away and back returns pre-edit values until page refresh | Module-level promise cache in `configService.ts` is not invalidated by `PUT /api/config/eligibility`; `Configuration/index.tsx` bypasses the cache (calls `api.config.eligibility()` directly) but other consumers still hit the stale cache |
 | G8 | **`wizard_config`, `audit_config`, `report_config` not seeded** | `GET /api/config/wizard`, `/audit`, `/reports` always return 404 | UI falls back to local TypeScript constants transparently, but config is not editable or DB-backed for these three sections |
 | G9 | ~~**Reports: Agent Bank Exposure**~~ ✅ **Resolved (July 2026)** | `GET /api/reports/agent-banks` aggregates UBS exposure by agent bank from each facility's latest snapshot; EAR history (`/api/reports/ear/:id`) and report history (`/api/reports/history`, backed by `report_history`) also implemented | Remaining Step 6 item: Ad Hoc Reporting |
-| G10 | ~~**`lp_records` financial fields stored as `VARCHAR`**~~ ✅ **Resolved for calculations (July 2026)** | Four precise `NUMERIC(20,2)` companion columns (`uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num`) are dual-written with the display strings; the BB engine computes from exact dollars first, falling back to `parseMoney()` only when no numeric exists | Display strings remain the API/UI contract. Remaining (cosmetic): rates/percentages still string-typed; direct SQL aggregation now possible on the four `*_num` columns |
+| G10 | ~~**`lp_records` financial fields stored as `VARCHAR`**~~ ✅ **Fully resolved (August 2026)** | First addressed July 2026 with four `NUMERIC(20,2)` companion columns dual-written alongside the display strings; the companions were then consolidated (August 2026) into single `NUMERIC(20,2)` columns — `uncalled_capital`, `cap_commit`, `aum`, `agent_bb` — with no string sibling, so there is one authoritative value per field. `agent_conc_limit` / `ubs_conc_limit` went numeric in the same change | Display strings remain the API/UI contract, formatted on the way out. Remaining (cosmetic): advance rates still string-typed; direct SQL aggregation available on all money columns |
 
 ### Open questions
 
@@ -1067,9 +1078,11 @@ The following fields were required in the `lp_records` table to support the full
 | 44 | SQL migrations V1_3–V1_7 consolidated back into V1_1/V1_2 (2026-06-13) | While no production DB exists, incremental ALTER/CREATE migrations added maintenance overhead without the checksum-safety benefit they provide post-launch. All changes (wizard_step/shadow_bb_overrides on submissions, lp_rates table, agent_tiers 5-tier update, Agent/UBS LP Classification split, lp_records rename + column renames) were absorbed into the two base files so fresh environments initialise from a single coherent snapshot. **Rule:** once V1_1 and V1_2 have been applied to a production DB, they must never be modified. All subsequent schema changes go in new `V1_N__` or `V2_1__` files. |
 | 45 | Shadow BB screen table expanded to 28 columns — full LP record in the grid (2026-06-13) | The Shadow BB LP table was extended from 10 summary columns to the full 28-column layout defined in `pe-sub-docs/SHADOW_BB_ANALYSIS.md`: Rank, Investor Name, Parent, SPV, UBS Classification, Inst/HNW, Inv. Grade?, Agent Classification, S&P, Moody's, Fitch, LP Size ($B), Size Criteria, UBS Rate, Agent Rate, Cap. Commit., Uncalled, Agent Conc. Limit, UBS Conc. Limit, % of Commit., Called Cap., % Uncalled, % LP Called, Agent Excess, UBS Excess, Agent BB, UBS BB, Notes. Columns removed: Delta, UBS Eligible, Incl. Agent Excess Concentration is a new computed field on `ComputedLPRecord` (`agentExcessM = MAX(0, ucM − totalAllUC × agentConcPct)`) derived in `computePortfolioBB` after the portfolio total is known. `agentCls?: string` added as an optional field to the `LP` type for the Agent LP Classification column. |
 | 46 | Name matching optimised — exact-match fast path + length-band candidate pruning + parallel scoring (2026-06-13) | **Symptom:** severe slowdown when the *same* Agent BB was uploaded a second time (reported on Blue Owl GP Stakes V). **Root cause:** `MatchingService.buildMatchQueueEntries` (the `POST /{id}/confirm` step) loads the **bank-wide** LP Master name list (`LpRepository.findAllDistinctNames()`) and scored every extracted row against every master name with combined Jaro-Winkler + Levenshtein — O(rows × names) — and (a) re-normalised the whole candidate list for *every* row, while (b) `normalize()` called `String.replaceAll(...)` per abbreviation and per legal suffix, recompiling a regex `Pattern` on each call → O(rows × names × (#abbrev + #suffix)) regex compilations. The second upload is worse because the first upload's `commitAcceptedMatches` inserts that BB's investors as new LP Master records, so the re-upload re-matches every row against a list grown by exactly those names — both factors of the product jump at once. **Fix** — four layers behind an immutable `MatchingService.Prepared` index built once per upload: (1) **regex pre-compilation** — abbreviation/suffix patterns compiled once into `Config`, plus static punctuation/whitespace patterns; the candidate list is normalised once at `prepare()`, not per row; (2) **exact-match fast path** — `Prepared` holds a `normalized → first-original` map, so a row whose name already exists verbatim in master (the duplicate-upload case) resolves in O(1) at score 100 / `Accept` with no fuzzy scoring, collapsing the dominant cost of the reported scenario; (3) **length-band pruning** — candidates indexed sorted by normalised length; given weights `jwWeight·jw + levWeight·lev` and review threshold T, a candidate whose length is outside `[(1−f)·a, a/(1−f)]` with `f = 1 − (T − jwWeight)/levWeight` cannot reach T even with a perfect Jaro-Winkler, so it is skipped without changing any Accept/Queue/Reject decision or matched name; auto-disabled when the math admits no safe pruning (e.g. `jwWeight ≥ T`); (4) **parallel scoring** — `buildMatchQueueEntries` scores rows via `parallelStream()`; fuzzy matching is CPU-bound and each row is independent, and `Prepared` is immutable so this is thread-safe. Deliberately uses the common ForkJoinPool (platform threads), **not** virtual threads, which would oversubscribe cores on CPU-bound work; persistence stays out of the parallel section. **Bank-wide matching is unchanged** — every existing LP record is still a candidate; only provably useless work is skipped. Tie-break preserved (lowest candidate index wins, matching a sequential full scan); the only observable difference is that the displayed `match_score` of an ultimately below-threshold "New LP" row may differ, since hopeless candidates are not scored — the decision and matched name are identical. `LpIngestService.ingest` inherits layers 1–3 through `prepare`/`matchBest` (left sequential — its loop interleaves DB writes). Guarded by `MatchingServiceTest` (exact-duplicate fast path; length-band-vs-exhaustive-scan equivalence property test). Supersedes the per-row `matchBestInList` usage from Decision 19 (the method remains as a thin wrapper over `prepare`/`matchBest`). **Future option:** a token/trigram inverted-index blocking key prunes far more aggressively but is only heuristically decision-safe, so it was left out of this pass. |
-| 47 | Header/gateway authentication with `dev` / `gateway` modes (2026-07) | Stateless Spring Security chain; identity established by `GatewayAuthenticationFilter` from `X-Auth-User`/`X-Auth-Roles` (gateway mode, injected by the SSO reverse proxy) or a fixed dev identity (`local.analyst@ubs.dev`, role ANALYST). Roles ANALYST / MANAGER / SERVICE mirror RBAC_ROLES.md; `POST /api/lpRecords/ingest` is SERVICE-only; configuration surfaces (config, field-mapping, bb-templates mutations) are ANALYST-only; ping/health/SSE are public (EventSource cannot send headers). Enabling real enforcement in a deployed environment is one config flag (`APP_SECURITY_MODE=gateway`) — no code change. Audit writers switched from the hardcoded "J. Smith" to the authenticated principal |
-| 48 | Precise numeric money columns dual-written with display strings (2026-07) | `uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num` (`NUMERIC(20,2)`, absolute dollars) persist alongside the formatted display strings. Ingest writes the exact extracted decimal + rounded display; a Shadow BB commit re-derives numerics from the committed strings (clearing stale values so a fresh string always wins). The BB engine reads the exact value first and only falls back to `parseMoney(display)`. Columns are internal — never on a DTO — so the API/UI contract is unchanged |
+| 47 | Header/gateway authentication with `dev` / `gateway` modes (2026-07) | Stateless Spring Security chain; identity established by `GatewayAuthenticationFilter` from `X-Auth-User`/`X-Auth-Roles` (gateway mode, injected by the SSO reverse proxy) or a fixed dev identity (`js25029`, role ANALYST). Roles ANALYST / MANAGER / SERVICE mirror RBAC_ROLES.md; `POST /api/lpRecords/ingest` is SERVICE-only; configuration surfaces (config, field-mapping, bb-templates mutations) are ANALYST-only; ping/health/SSE are public (EventSource cannot send headers). Enabling real enforcement in a deployed environment is one config flag (`APP_SECURITY_MODE=gateway`) — no code change. Audit writers switched from the hardcoded "J. Smith" to the authenticated principal |
+| 48 | ~~Precise numeric money columns dual-written with display strings (2026-07)~~ **Superseded by 50** | `uncalled_capital_num`, `cap_commit_num`, `aum_num`, `agent_bb_num` (`NUMERIC(20,2)`, absolute dollars) persisted alongside the formatted display strings, and the BB engine read the exact value first, falling back to `parseMoney(display)`. Consolidated away in 2026-08 — see decision 50 |
 | 49 | Shadow BB run is one atomic transaction (`ShadowBbService`); snapshots leave the service as `BbSnapshotDto` | LP upserts, snapshot insert, facility `last_run_at`/status update and audit entry commit or roll back together — no partial runs. The `BbSnapshot` entity stays off the wire per the no-entities-in-responses rule |
+| 50 | `lp_records` money consolidated to one NUMERIC column per field (2026-08); supersedes 48 | The dual display-string + `*_num` pair collapsed into a single `NUMERIC(20,2)` column per field: `uncalled_capital`, `cap_commit`, `aum`, `agent_bb`. One authoritative value replaces two that could disagree, and the engine no longer needs a numeric-first fallback (`moneyM` → `dollarM`). `agent_conc` / `ubs_conc` were renamed to `agent_conc_limit` / `ubs_conc_limit` and typed `NUMERIC`; they carry either a percent (`7.5`) or a dollar cap (`25000000`), told apart by magnitude at `ABSOLUTE_DOLLAR_MIN`. `fund_sleeve` was dropped. Conversions are centralised in `MoneyValues`; the string-typed API/UI contract is preserved by formatting on the way out, so an abbreviated input round-trips at full precision (`"$4.2B"` → `"$4,200,000,000"`). Applied by editing `V1_1__schema.sql` / `V1_2__seed.sql` in place rather than adding a migration |
+| 51 | `users` becomes a gateway-mirrored directory (2026-08) | The table was dead — created, never populated, never read. It is now upserted from the `X-Auth-*` headers on every authenticated request (`UserDirectoryService`, called by `GatewayAuthenticationFilter`), so a stored uuName can be rendered as a person without a corporate-directory lookup. Rekeyed from `email UNIQUE` + single `name` to `uu_name UNIQUE` + `first_name`/`last_name`/`email`/`role`/`last_seen_at`: email and surname both change, uuName does not. Still not a credential store — no password column, and the API never authenticates anyone. Design points: the gateway is sole source of truth so there is no edit surface; `SERVICE` principals are never stored (the directory describes people); a blank attribute preserves the stored value rather than blanking a known display name, while role always applies so revocation takes effect immediately; writes are throttled to once per 10 min per unchanged identity so the UI's 15s ping does not update a row per call; and a directory failure is logged, never propagated, so it cannot turn a valid request into a 500. Attribution columns (`audit_log.user_id`, `submissions.uploaded_by`) stay unpopulated by design — maker/checker is recorded as a uuName string so history cannot dangle or shift if a directory row is removed. Exposed read-only via `GET /api/users` and `GET /api/users/{uuName}`; `GET /api/users/me` still resolves from the request principal |
 
 ---
 
