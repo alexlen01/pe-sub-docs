@@ -29,9 +29,9 @@ The script regenerates three CSVs consumed by the *existing* ingest/seed jobs.
 
 | # | Decision | Choice | Consequence |
 |---|---|---|---|
-| D1 | Extract mechanism | **One-off Python script** | No `LpDbExportExtractService`, no batch job, no new endpoint. Script reads the XLSX + `facilities.csv` and writes CSVs; existing jobs load them. |
+| D1 | Extract mechanism | **One-off Python script** | No `LpDbExportExtractService`, no batch job, no new endpoint. Script reads the LP DB Export XLSX + the Agent Bank Summary report XLSX (`AGENT_BANK_SUMMARY_FILE`, **REVISED 2026-08-17**: was a hand-cleaned `data/mock/facilities.csv`) and writes CSVs; existing jobs load them. |
 | D2 | Seed contract | **REVISED 2026-07-18: full-column seed** — `lp_facility_seeds.csv` carries **every per-LP export column** (facility-level `AccountID`/`FndName`/`BBDate` excluded), matching the full `lp_records` insert | Row values are authoritative on seed; the LP Master golden profile only fills fields a row left blank (a legacy 7-column file still parses — the reader is non-strict and pads blanks — and keeps the old merge behavior). `ubs_cls` is derived **per row** from that row's attributes via `reference/bb_criteria_matrix.csv` (§6.3.2 revised). |
-| D3 | Facilities | **Upsert; `bank_status` = Active/Inactive** | Match-derived status goes on `bank_status` (not the Shadow-BB workflow `status`). Set via merged `facilities.csv` + existing facility ingest. |
+| D3 | Facilities | **Upsert; `bank_status` = Active/Inactive** | Match-derived status goes on `bank_status` (not the Shadow-BB workflow `status`) and **overrides** the report's own `FacilityStatus` column. Emitted as `facilities.csv` for the existing facility ingest. |
 | D4 | Match grain | **AccountID** (real data is 1:1 with fund name) | Facility identity stays `name`; an orphan export account is manufactured as an Inactive placeholder, and a duplicate FndName is disambiguated with the AccountID (§4). |
 | D5 | Delivery mode | **One-off (day 1, maybe twice)** | Generated CSVs are committed artifacts, re-run by hand when a fresh export lands. |
 | D6 | LP Master | **Truncate + repopulate with distinct LPs; re-evaluate the table** | See §6 — golden-record purpose, key, and what may/may not be seeded from the export. |
@@ -46,9 +46,10 @@ The script regenerates three CSVs consumed by the *existing* ingest/seed jobs.
 
 ```
 Seed LP DB Export.xlsx ─┐
-facilities.csv ─────────┤   pe-sub-jobs/scripts/lp_db_extract.py   (one-off, D1)
+AgentBankSummaryRpt.xlsx┤   pe-sub-jobs/scripts/lp_db_extract.py   (one-off, D1)
                         └──▶  parse 32 cols (header-addressed, replaceable map)
-                             match AccountID → facilities.csv.account_number
+                             un-band the Agent Bank Summary (§4) → facility rows
+                             match AccountID → AccountNumber
                              pre-flight validation → console counts, no rejects (§3.1)
                              emit ▼
         ┌────────────────────────┬───────────────────────────┬──────────────────────────┐
@@ -99,7 +100,10 @@ it does the best it can and prints what needs analyst attention on its console r
 
 | Defect | Evidence | Handling |
 |---|---|---|
-| Export account not in `facilities.csv` | `5VZ9001`, `5VZ9002` (the sim's `TPG AG` extra accounts) | **Manufacture** an Inactive `"Unknown"`-bank placeholder facility so the LPs still seed (§4). |
+| Export account not in the Agent Bank Summary | `5VZ9001`, `5VZ9002` (the sim's `TPG AG` extra accounts) and `5VZ8895` (the cleaned Oaktree account the generator takes from `data/mock/facilities.csv`) | **Manufacture** an Inactive `"Unknown"`-bank placeholder facility so the LPs still seed (§4). |
+| Agent Bank Summary reprints a row | `Whitehorse Liq V` / `5VX1997` appears twice | Second occurrence of an (`AccountNumber`, `Borrower`) pair dropped; counted on the console. |
+| One `AccountNumber`, two borrowers | `5VZ8873` → `Carlyle Buyout Umbrella` **and** `Oaktree Opportunities Fund Xb` | Both survive as facilities and both follow that account's status; the **first** row owns the `AccountID → facility name` join the seed uses. Counted on the console. |
+| Borrower name reused by another account | `Arctos Sports Fund II` (`5VY4509`, `5VY4577`), `Blue Owl GP Stakes V (A) LP`, `CD&R X, VI, XII [U]` | Suffix the later name with its `AccountNumber` to keep `Facility.name` unique (D4). |
 | Fund name shared by many AccountIDs | `TPG AG Asset Based Credit Fund` → 3 AccountIDs | Disambiguate the placeholder name with the AccountID to keep `Facility.name` unique. |
 | **Same LP, contradictory attributes** | All **300** investor names disagree across their ~67 rows (type/region/AUM all randomized) | See §6.2 — per-field majority vote ("best record"); no conflict report. |
 | Free-text Investor Type / Agent LP Category | mis-spellings, non-canonical labels | Normalise to reference lists; pass unmatched through unchanged + list each on the console with a fuzzy suggestion (§6.4). |
@@ -109,23 +113,34 @@ it does the best it can and prints what needs analyst attention on its console r
 
 ## 4. Facilities (D3, D4) — as built
 
-- **Existing facilities (facilities.csv-driven).** The script walks the base `facilities.csv` and
-  sets `bank_status = (account_number ∈ export.AccountID) ? "Active" : "Inactive"`. **This export →
-  63 Active / 5 Inactive** existing. The 5 Inactive are facilities absent from the export
-  (`5VW9761`, `5VY4577`, `5VY5270`, `5VY8943`, `5VZ8895`).
-- **Orphan export accounts → manufactured, not rejected (100% insertion).** The 2 export AccountIDs
-  missing from `facilities.csv` (`5VZ9001`, `5VZ9002`) each become a **new Inactive placeholder
+- **Source: the Agent Bank Summary report** (`data/import/AgentBankSummaryRpt.xlsx`, read-only) —
+  the ORIGINAL SOURCE for agent bank, loan amount, maturity date and agent-reported status. It is a
+  banded print layout, not a table: the agent bank sits alone on a group-header row and is **carried
+  down** onto the facility rows beneath it (which leave the Agent cell blank), and every group ends
+  with an `AccessTotalsLoanAmount:` subtotal row (plus a sheet grand total) that carries no facility.
+  `read_agent_bank_summary` un-bands it and applies the dirty-row rules in §3.1. **This report →
+  69 rows → 68 facilities** (1 reprint dropped, 3 names suffixed, 1 account listed twice).
+- **Reported facilities.** `bank_status = (account_number ∈ export.AccountID) ? "Active" : "Inactive"`,
+  resolved **per row off that row's own account**, overriding the report's `FacilityStatus`.
+  **This export → 68 Active / 0 Inactive** (all 67 distinct reported accounts appear in the export).
+- **Not in the report.** `ubs_participation` is UBS's own figure, never reported by the agent bank —
+  written **blank**, which `FacilityRowProcessor` ingests as null. `collateral_date` comes from the
+  export (`:= BBDate`, D7).
+- **Orphan export accounts → manufactured, not rejected (100% insertion).** The 3 export AccountIDs
+  missing from the report (`5VZ8895`, `5VZ9001`, `5VZ9002`) each become a **new Inactive placeholder
   facility**: `agent_bank = "Unknown"`, `name = FndName`, `account_number = AccountID`,
   `collateral_date = BBDate`. `"Unknown"` satisfies `FacilityRowProcessor`'s non-blank agent-bank
   rule, and blank loan/date/participation ingest as null — so the placeholder loads and its LP
-  records seed. The two share a FndName (a sim artifact), so the second is disambiguated to
-  `TPG AG Asset Based Credit Fund (5VZ9002)` to keep `Facility.name` unique. **Net: 70 facilities
-  (63 Active + 5 Inactive + 2 placeholder Inactive); no LP record is rejected.** On clean 1:1 data
+  records seed. Two share a FndName (a sim artifact), so the second is disambiguated to
+  `TPG AG Asset Based Credit Fund (5VZ9001)` to keep `Facility.name` unique. **Net: 71 facilities
+  (68 Active + 0 Inactive + 3 placeholder Inactive); no LP record is rejected.** On clean 1:1 data
   no placeholders are needed. Analysts fix the `"Unknown"` bank/name post-load.
-- **Identity stays `name` (D4).** Facility names in `facilities.csv` are authoritative and left
-  unchanged; the messy `FndName` is **not** written over them (18/63 differ in the sim: casing,
-  typos, an encoding artifact). The seed resolves `facility_name` from `AccountID → facilities.name`,
-  so seed rows link by the canonical name via the API's `findByName`.
+- **Identity stays `name` (D4).** The report's `Borrower` is now the authoritative facility name and
+  is left unchanged — including its warts (`Genercal Atlantic Core Program`, `EDISON PARTNERS XI LP;`,
+  `Silver Point Specialty Credit III Master Fu`, an encoding artifact in the Veritas name, and the
+  full `Silicon Valley Bank (A division of First Citizens Bank)` agent label). The messy export
+  `FndName` is **not** written over it. The seed resolves `facility_name` from
+  `AccountID → Borrower`, so seed rows link by that name via the API's `findByName`.
 - **Status field:** written to **`bank_status`**; the Shadow-BB workflow `status`
   (`Not Started → Active` on accepted run) is untouched (`project_shadow_bb_trigger`).
 - **Date (D7):** for **Active** facilities `collateral_date := BBDate` (first BBDate for the account,
@@ -269,12 +284,13 @@ The export's free-text fields are normalised against **editable reference lists 
 **New — standalone extract utility (lives inside `pe-sub-jobs/data/`)**
 - `pe-sub-jobs/scripts/lp_db_extract.py` — parse, AccountID match, validate, **normalise** (§6.4).
   **No CLI args**: the export to process is the **`EXPORT_FILE` variable at the top of the script**
-  (edit + re-run), defaulting to `pe-sub-jobs/data/import/`. Base `facilities.csv` and the
-  `pe-sub-jobs/data/reference/` lists are fixed project paths — every path is anchored to the
+  (edit + re-run), defaulting to `pe-sub-jobs/data/import/`. The Agent Bank Summary report
+  (`AGENT_BANK_SUMMARY_FILE`, also `pe-sub-jobs/data/import/`) and the `pe-sub-jobs/data/reference/`
+  lists are fixed project paths — every path is anchored to the
   pe-sub-jobs project root, so the tool is fully self-contained and reaches nothing outside it.
   **Writes every output into `pe-sub-jobs/data/out/`** and **never touches the app tree**. Runs from
-  any working directory. Reads 20,000 rows → **300 distinct LPs, 1,518 seed rows, 70 facilities
-  (63 Active / 5 Inactive / 2 placeholder)**.
+  any working directory. Reads 20,000 export rows + 69 report rows → **6,049 distinct LPs, 20,000
+  seed rows, 71 facilities (68 Active / 0 Inactive / 3 placeholder)**.
 - `pe-sub-jobs/data/reference/` — editable, Config-seeded lists: `investor_types.csv`,
   `investor_type_aliases.csv`, `agent_lp_categories.csv`, `bb_criteria_matrix.csv` (Borrowing Base
   Criteria Matrix, replaces the retired `ubs_rate_tiers.csv`), `rate_floor_map.csv` (the Floor Map).
@@ -282,9 +298,9 @@ The export's free-text fields are normalised against **editable reference lists 
   wrapper (each resolves its own dir, picks a Python interpreter, checks `openpyxl`; no args).
   `lp_db_generate.ps1` / `lp_db_generate.sh` — same pair for the generator.
 - **The three app CSVs in `pe-sub-jobs/data/out/` — and nothing else** (revised 2026-08-15); clean
-  N-column (lenient tokenizer): `lp_master.csv`, `lp_facility_seeds.csv`, `facilities.csv` (base +
-  `bank_status` + Active `collateral_date=BBDate` + manufactured Inactive placeholders for orphan
-  accounts). The whole directory is purged at the start of each write, so a stale file can never
+  N-column (lenient tokenizer): `lp_master.csv`, `lp_facility_seeds.csv`, `facilities.csv` (the
+  Agent Bank Summary + `bank_status` + Active `collateral_date=BBDate` + manufactured Inactive
+  placeholders for orphan accounts; `ubs_participation` blank — not in the report). The whole directory is purged at the start of each write, so a stale file can never
   reach the ingest jobs.
 - **No report files.** `unmatched_investor_types.csv`, `unmatched_agent_categories.csv`,
   `ubs_class_matrix_variance.csv` and `EXTRACT_SUMMARY.txt` are **retired** — their content is the
