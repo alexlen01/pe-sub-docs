@@ -3036,7 +3036,7 @@ components:
             uec:          { type: string, description: Formatted UBS Eligible Uncalled Cap e.g. "$25.0M" }
             uecM:         { type: number, description: UBS Eligible Uncalled Cap in $M }
             ubbM:         { type: number, description: UBS Borrowing Base in $M }
-            abbM:         { type: number, description: Agent BB in $M (stored agent-reported value, else engine-derived) }
+            abbM:         { type: number, description: "Agent BB in $M (stored agent-reported value, else engine-derived)" }
             deltaM:       { type: number, description: UBS BB minus Agent BB in $M }
             concExcessM:  { type: number, description: Uncalled above the UBS per-LP cap in $M }
             ucM:          { type: number, description: Uncalled capital in $M }
@@ -3048,7 +3048,7 @@ components:
             ubb:          { type: string, description: Formatted UBS BB e.g. "$22.5M" }
             delta:        { type: string, description: Formatted delta e.g. "–$3.5M" }
             rate:         { type: string, description: Formatted BUSA rate e.g. "90%" }
-            agentRate:    { type: string, description: Agent advance rate as stored, e.g. "95.0%" }
+            agentRate:    { type: string, description: "Agent advance rate as stored, e.g. \"95.0%\"" }
 
     BBBreach:
       type: object
@@ -3056,8 +3056,8 @@ components:
         type:     { type: string, enum: [single-lp, top10, unrated, non-us], description: Concentration test that tripped }
         severity: { type: string, enum: [breach, warning] }
         message:  { type: string, description: Human-readable detail incl. the LP or group }
-        value:    { type: number, description: Actual concentration as a decimal fraction, e.g. 0.518 }
-        limit:    { type: number, description: Credit agreement limit as a decimal fraction, e.g. 0.5 }
+        value:    { type: number, description: "Actual concentration as a decimal fraction, e.g. 0.518" }
+        limit:    { type: number, description: "Credit agreement limit as a decimal fraction, e.g. 0.5" }
 
     ReportHistoryEntry:
       type: object
@@ -3116,7 +3116,7 @@ components:
       properties:
         # LP Portfolio table
         totalCapCommit:     { type: number, description: Total capital commitments in $millions }
-        totalCalledCap:     { type: number, description: Total called capital in $millions (Capital Commitments − Uncalled, derived when not stored) }
+        totalCalledCap:     { type: number, description: "Total called capital in $millions (Capital Commitments − Uncalled, derived when not stored)" }
         pctCalled:          { type: number }
         totalAllUncalled:   { type: number, description: Total uncalled across all LPs in $millions }
         totalLPs:           { type: integer }
@@ -3131,7 +3131,7 @@ components:
         ubsParticipation:    { type: number, description: UBS participation share in $millions }
         ubsParticipationPct: { type: number, description: UBS Participation ÷ Total Facility Size }
         facilityLTV:         { type: number, description: Total Facility Size ÷ Total Uncalled }
-        availableCommit:     { type: number, description: MIN(Total Facility Size, Agent BB) in $millions }
+        availableCommit:     { type: number, description: "MIN(Total Facility Size, Agent BB) in $millions" }
         facilityAdvRate:     { type: number, description: Agent BB ÷ Total Uncalled }
         agentBBRaw:          { type: number, description: Agent BB in $millions }
         ubsBBRaw:            { type: number, description: UBS BB in $millions }
@@ -3209,7 +3209,7 @@ components:
         agentConc:     { type: string, nullable: true, description: Formatted concentration limit e.g. "10.0%" }
         conf:          { type: integer, description: Overall extraction confidence 0–100 (average of field confidences) }
         requiresReview: { type: boolean }
-        agentBBFmt:    { type: string, description: Computed agent BB as formatted string e.g. "$18,500,000" }
+        agentBBFmt:    { type: string, description: "Computed agent BB as formatted string e.g. \"$18,500,000\"" }
         pctBBFmt:      { type: string, description: This LP's share of total agent BB e.g. "3.42%" }
         parent:        { type: string, nullable: true }
         nav:           { type: string, nullable: true }
@@ -3226,7 +3226,7 @@ components:
         extracted:  { type: string, description: Column header as it appears in the document }
         canonical:  { type: string, description: Group-prefixed canonical label e.g. "Commitment Data — UNCALLED" }
         group:      { type: string, description: LP Master section name e.g. "Commitment Data" }
-        note:       { type: string, description: Match quality note e.g. "Exact match", "Matched via fuzzy similarity", "Matched via alias dictionary" }
+        note:       { type: string, description: "Match quality note e.g. \"Exact match\", \"Matched via fuzzy similarity\", \"Matched via alias dictionary\"" }
         tier:       { type: string, description: Always "Core" for extraction-sourced mappings }
 
     DocRecognition:
@@ -3305,7 +3305,7 @@ components:
       description: Result of POST /matching/test
       properties:
         input:      { type: string, description: Original input name }
-        normalised: { type: string, description: Name after normalisation (suffix removal, abbreviation expansion) }
+        normalised: { type: string, description: "Name after normalisation (suffix removal, abbreviation expansion)" }
         matches:
           type: array
           items:
@@ -3320,7 +3320,7 @@ components:
         facilityName:  { type: string, description: Facility name resolved for display }
         agentName:     { type: string, description: Extracted investor name from the document }
         masterName:    { type: string, nullable: true, description: "Best-matched LP Master name, or masterNameOverride if set" }
-        masterLpId:    { type: integer, nullable: true, description: LP Master id of the proposed match — always the matched child/feeder, never its parent }
+        masterLpId:    { type: integer, nullable: true, description: "LP Master id of the proposed match — always the matched child/feeder, never its parent" }
         agentParent:   { type: string, nullable: true, description: Sponsor named by the agent document; feeds the Parent/Sponsor corroboration signal }
         masterParent:
           type: string
@@ -3333,7 +3333,7 @@ components:
         decision:      { type: string, enum: [Pending, Accepted, Rejected, Manual], description: Current decision (capitalised) }
         status:        { type: string, description: Mirrors decision for UI display }
         isNew:         { type: boolean, description: True if no existing LP Master record matched }
-        reasons:       { type: array, items: { type: string }, description: Reasons explaining the queue action (low match score, low extraction confidence, etc.) }
+        reasons:       { type: array, items: { type: string }, description: "Reasons explaining the queue action (low match score, low extraction confidence, etc.)" }
         matchDetails:  { $ref: '#/components/schemas/MatchAnalysis' }
 
     LpRate:
@@ -3775,7 +3775,7 @@ components:
           description: What the tab is for; LP_GRID is the LP schedule the BB is built from
         tabSort:         { type: integer, description: Order of the tab within the template }
         sheetName:       { type: string, nullable: true, description: Worksheet name; null when tabs are auto-discovered }
-        sleeveName:      { type: string, nullable: true, description: Sleeve/tranche this tab covers, for multi-sleeve facilities }
+        sleeveName:      { type: string, nullable: true, description: "Sleeve/tranche this tab covers, for multi-sleeve facilities" }
         headerRowIndex:  { type: integer, nullable: true, description: 0-based row holding the column headers }
         headerRowSpan:   { type: integer, description: Number of rows the header occupies (>1 for stacked headers) }
         skipRowKeywords:
