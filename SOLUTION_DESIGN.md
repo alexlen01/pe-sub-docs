@@ -1,7 +1,11 @@
 # PE Sub Platform — Solution Design
 
----
+Existing process flow: `BB_PROCESS_FLOW.md`
 
+
+Implemented process flow: `NEW_BB_PROCESS_FLOW.md`
+
+---
 
 ## Business Context — Private Equity Subscription Finance
 
