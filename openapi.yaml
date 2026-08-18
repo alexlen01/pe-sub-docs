@@ -23,12 +23,15 @@ info:
     **Authentication** — stateless, header-based. In `gateway` mode (production, behind UBS SSO)
     every request must carry `X-Auth-User` and `X-Auth-Roles`; a missing user header returns `401`.
     In `dev` mode (default local) a fixed dev identity is injected so no headers are required.
-    Roles: `ANALYST`, `MANAGER`, `SERVICE`. Service-to-service endpoints require `SERVICE`
-    (`POST /lpRecords/ingest`, `POST /lpRecords/seed`, `POST /facilities/ingest`,
-    `POST /lp-master/ingest`, `PATCH /config/cls-conc-limit-defaults`); configuration and
-    field-mapping mutations require `ANALYST` — an insufficient role returns `403`. Public routes
-    (`/ping`, `/health`, `/notifications/**`) need no identity.
-  version: 0.9.0
+    Roles: `ANALYST`, `MANAGER`, `SERVICE`, `VIEWER`. Service-to-service endpoints require
+    `SERVICE` (`POST /lpRecords/ingest`, `POST /lpRecords/seed`, `POST /facilities/ingest`,
+    `POST /lp-master/ingest`, `POST /lp-master/clear`, `PATCH /config/cls-conc-limit-defaults`).
+    Shadow BB review (`POST /submissions/{id}/accept`, `POST /submissions/{id}/reject`) requires
+    `MANAGER`. Configuration, field-mapping, LP Master curation (`PUT`/`DELETE /lp-master/**`)
+    and BB template mutations require `ANALYST` — an insufficient role returns `403`. `VIEWER`
+    is read-only: every `GET` under `/api` is open to any authenticated role, and all remaining
+    writes are denied. Public routes (`/ping`, `/health`, `/notifications/**`) need no identity.
+  version: 0.10.0
   contact:
     name: PE Sub Platform Team
 
@@ -59,6 +62,11 @@ tags:
       Document extraction results persisted in `submission_extractions` by `pe-sub-api`
       and served via submission sub-endpoints. `pe-sub-extraction` (port 3002) is called
       internally by `pe-sub-api` on upload and re-extraction; the UI never calls it directly.
+  - name: bb-templates
+    description: >
+      Agent BB template registry — the per-agent workbook layouts (tabs, header rows, columns,
+      LP-category group sections) that drive extraction, plus deterministic self-adoption
+      profiling of an unseen workbook into a proposed template.
   - name: field-mapping
     description: Alias-group dictionary mapping extracted headers to canonical LP fields
   - name: matching
@@ -200,6 +208,25 @@ paths:
                   created: { type: integer }
                   updated: { type: integer }
                   skipped: { type: integer }
+
+  /facilities/count:
+    get:
+      tags: [facilities]
+      summary: Total facility count
+      description: Cheap row count used by dashboards and the jobs feed to confirm an ingest landed.
+      operationId: countFacilities
+      responses:
+        '200':
+          description: Row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    format: int64
+                    example: 42
 
   /facilities/{id}:
     get:
@@ -403,6 +430,39 @@ paths:
                   updated: { type: integer }
                   skipped: { type: integer }
 
+  /lp-master/clear:
+    post:
+      tags: [lp-master]
+      summary: Clear the entire LP Master table  [SERVICE role]
+      description: >
+        Wipes every `lp_master` row ahead of a full repopulate from the one-off LP DB extract feed
+        ("override, do not preserve"). Invoked by the `pe-sub-jobs` lp-master ingest job as a
+        pre-step — never a human surface, which is why it is `SERVICE`-gated rather than `ANALYST`
+        like the per-id `DELETE`. Facility LP records are **detached**, not deleted. Idempotent:
+        a no-op on an already-empty table. Writes an `LP Master Cleared` audit event and broadcasts
+        an SSE notification.
+      operationId: clearLpMaster
+      responses:
+        '200':
+          description: Clear completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedMasters:
+                    type: integer
+                    format: int64
+                    description: LP Master rows removed
+                    example: 6049
+                  detachedRecords:
+                    type: integer
+                    format: int64
+                    description: Facility LP records whose master link was cleared
+                    example: 312
+        '403':
+          description: Caller does not hold the SERVICE role
+
   /lp-master/count:
     get:
       tags: [lp-master]
@@ -598,6 +658,24 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/LP'
+
+  /lpRecords/count:
+    get:
+      tags: [lpRecords]
+      summary: Total LP record count (all facilities)
+      operationId: countLpRecords
+      responses:
+        '200':
+          description: Row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    format: int64
+                    example: 42
 
   /lpRecords/{id}:
     get:
@@ -872,7 +950,7 @@ paths:
                 type: object
                 properties:
                   created: { type: integer }
-                  updated: { type: integer, description: Always 0 — existing pairs are skipped, not updated }
+                  updated: { type: integer, description: "Always 0 — existing pairs are skipped, not updated" }
                   skipped: { type: integer }
 
   /lpRecords/rates:
@@ -1101,6 +1179,78 @@ paths:
                           description: >
                             UBS advance rate for the tier as a raw fraction (0.9 = 90%);
                             the consumer formats it.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /reports/collateral/{facilityId}/pdf:
+    get:
+      tags: [reports]
+      summary: Collateral certificate as a rendered PDF
+      description: >
+        Renders the same snapshot data as `GET /reports/collateral/{facilityId}` into a
+        downloadable PDF certificate. Response carries
+        `Content-Disposition: attachment; filename="bb-certificate-<facility-slug>.pdf"`.
+        Section flags let the caller drop parts of the document; `watermark` stamps the page
+        (pass an empty value for an unwatermarked final copy).
+      operationId: getCollateralReportPdf
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+        - name: snapshotId
+          in: query
+          schema:
+            type: integer
+          description: Report on a specific snapshot. Omit for the latest snapshot.
+        - name: watermark
+          in: query
+          schema:
+            type: string
+            default: DRAFT - For Internal Review
+          description: Diagonal page watermark. Pass an empty string to render without one.
+        - name: detail
+          in: query
+          schema:
+            type: string
+            default: LPRecord
+          description: Level of per-LP detail included in the LP table
+        - name: includeLps
+          in: query
+          schema:
+            type: string
+            default: included
+          description: Which LP rows to list (e.g. only BB-included LPs, or all)
+        - name: catSummary
+          in: query
+          schema: { type: boolean, default: true }
+          description: Include the LP-category summary section
+        - name: coverageTrend
+          in: query
+          schema: { type: boolean, default: true }
+          description: Include the coverage trend section
+        - name: concAnalysis
+          in: query
+          schema: { type: boolean, default: true }
+          description: Include the concentration analysis section
+        - name: reclass
+          in: query
+          schema: { type: boolean, default: true }
+          description: Include the reclassification section
+        - name: quality
+          in: query
+          schema: { type: boolean, default: true }
+          description: Include the data-quality section
+      responses:
+        '200':
+          description: PDF certificate
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: attachment; filename="bb-certificate-<facility-slug>.pdf"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1334,15 +1484,50 @@ paths:
   /submissions/{id}/complete:
     post:
       tags: [submissions]
-      summary: Accept Shadow BB results — marks submission Processed and facility Active
+      summary: Submit the Shadow BB run for independent review (maker step)
       description: >
-        Called by the Run Shadow BB screen after the credit officer reviews and accepts the
-        calculation results. Sets `submission.status = "Processed"`, `submission.wizardStep = 6`,
-        `facility.status = "Active"`, and stamps `facility.lastRunAt` to the current time.
-        No Shadow BB certificate is produced — accepting the run is sufficient (see OPEN_QUESTIONS R2/R3).
-        Idempotent — calling it more than once is safe and returns the same state.
-        Writes a `Shadow BB Completed` audit event.
+        Called by the Run Shadow BB screen when the analyst finishes the run. This is the **maker**
+        half of maker/checker: it does *not* finalize anything. Sets
+        `submission.status = "Pending Review"`, `submission.wizardStep = 6`, and
+        `facility.status = "Pending Review"` so the Dashboard can route a Manager to review it.
+        Stamps `submittedBy` with the caller's uuName (an existing value is kept, so re-submitting
+        while already pending preserves the original maker identity), and clears any prior
+        `reviewNote` / `reviewedBy` so the submission is not still shown as "Changes Requested".
+        The run is finalized only by `POST /submissions/{id}/accept` (Manager).
+        Writes a `Shadow BB Submitted` audit event.
       operationId: completeSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/ExpectedVersionQuery'
+      responses:
+        '200':
+          description: Updated submission record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '403':
+          $ref: '#/components/responses/NotOwner'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StaleVersion'
+
+  /submissions/{id}/accept:
+    post:
+      tags: [submissions]
+      summary: Accept the Shadow BB run (checker step)  [MANAGER role]
+      description: >
+        The **checker** half of maker/checker, and the only route that finalizes a cycle. Sets
+        `submission.status = "Processed"` (step 6), stamps `reviewedBy`, sets
+        `facility.status = "Active"` and `facility.lastRunAt`, writes the finalized UBS
+        classification / rate / concentration decisions back to LP Master, and clears the live
+        `reclassified` flag on the facility's LP records (the accepted snapshot keeps `rcl=true`
+        as historical evidence). No Shadow BB certificate is produced — acceptance is sufficient.
+        A Manager may accept a submission they submitted themselves, so a facility is never
+        locked when no second reviewer is available.
+        Writes a `Shadow BB Accepted` audit event and broadcasts an SSE notification.
+      operationId: acceptSubmission
       parameters:
         - $ref: '#/components/parameters/IdPath'
       responses:
@@ -1352,6 +1537,108 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Submission'
+        '403':
+          description: Caller does not hold the MANAGER role
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Submission is not pending review
+
+  /submissions/{id}/reject:
+    post:
+      tags: [submissions]
+      summary: Reject the Shadow BB run and request changes (checker step)  [MANAGER role]
+      description: >
+        Returns the submission to an actionable state — `status = "Review"`, `wizardStep = 5` —
+        with the reviewer's rationale stored in `reviewNote` (that combination is the
+        "Changes Requested" signal the analyst sees). `submittedBy` is cleared so the next
+        `/complete` re-stamps whoever actually re-submits. The facility rolls back to
+        `Needs Review`; no LP Master write-back occurs. A Manager may reject their own
+        submission so the workflow stays actionable with a single reviewer.
+        Writes a `Shadow BB Rejected` audit event and broadcasts an SSE notification.
+      operationId: rejectSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  description: Reviewer rationale. Required — a blank or missing reason returns 400.
+                  example: Concentration limit for Blackstone looks stale — re-check the agent file.
+      responses:
+        '200':
+          description: Updated submission record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          description: A rejection reason is required
+        '403':
+          description: Caller does not hold the MANAGER role
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Submission is not pending review
+
+  /submissions/{id}/take-over:
+    post:
+      tags: [submissions]
+      summary: Take ownership of another analyst's in-flight submission
+      description: >
+        Reassigns `ownerUuName` / `ownerName` to the caller so they can edit a colleague's
+        submission (writes are otherwise owner-or-Manager only — see the 403 on the mutating
+        routes). The previous owner is notified over SSE that their unsaved changes can no longer
+        be saved. Idempotent: taking over a submission you already own returns it unchanged.
+        Terminal submissions (`Processed`, `Aborted`) cannot be taken over.
+        Writes a `Submission Taken Over` audit event.
+      operationId: takeOverSubmission
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Submission with the caller as owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: A completed or aborted submission cannot be taken over
+
+  /submissions/facilities/{facilityId}/rerun-for-review:
+    post:
+      tags: [submissions]
+      summary: Re-run Shadow BB for a facility and submit the result for review
+      description: >
+        Entry point for re-runs started from the Shadow BB results screen after LP classification
+        changes, where there is no upload-backed submission (seeded facilities are the common
+        case). Atomically calculates and snapshots the Shadow BB, then creates a **new**
+        submission already at `Pending Review` (step 6, owned by and submitted by the caller,
+        `fileName = "LP classification re-run"`), and rolls the facility to `Pending Review`.
+        Writes `BB Recalculated` and `Shadow BB Submitted` audit events and broadcasts over SSE.
+      operationId: rerunFacilityForReview
+      parameters:
+        - $ref: '#/components/parameters/FacilityIdPath'
+      responses:
+        '201':
+          description: New snapshot plus the review submission created for it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshot:
+                    $ref: '#/components/schemas/BBSnapshot'
+                  submission:
+                    $ref: '#/components/schemas/Submission'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1390,6 +1677,7 @@ paths:
       operationId: saveShadowBbState
       parameters:
         - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/ExpectedVersionQuery'
       requestBody:
         required: true
         content:
@@ -1408,8 +1696,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Submission'
+        '403':
+          $ref: '#/components/responses/NotOwner'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StaleVersion'
 
   /submissions/{id}/remap:
     post:
@@ -1524,6 +1816,33 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ExtractedLP'
+
+  /submissions/{id}/extracted-lps/{rowId}:
+    delete:
+      tags: [extraction]
+      summary: Discard one extracted row from the Review Extraction step
+      description: >
+        Removes the row with the given `id` from
+        `submission_extractions.extracted_lps` and re-stamps `total_rows`. Used by the Review
+        Extraction screen to drop a row the analyst judges not to be an LP (a stray subtotal or
+        note line the extractor picked up). Owner-or-Manager only. Idempotent in effect: a
+        `rowId` that is not present leaves the array unchanged.
+      operationId: discardExtractedLp
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - name: rowId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The `id` field of the extracted row, not its array position
+      responses:
+        '204':
+          description: Row discarded
+        '403':
+          $ref: '#/components/responses/NotOwner'
+        '404':
+          description: Submission, or its extraction record, does not exist
 
   /submissions/{id}/field-map:
     get:
@@ -1880,44 +2199,121 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /matching/thresholds:
+  # ── BB Templates ──────────────────────────────────────────────────────────────
+
+  /bb-templates:
     get:
-      tags: [matching]
-      summary: Current name-matching score thresholds  [planned — use GET /config/matching instead]
-      operationId: getMatchThresholds
+      tags: [bb-templates]
+      summary: List all registered Agent BB templates
+      description: >
+        The template registry, each entry carrying its tabs and their LP-category group sections.
+        Readable by any authenticated role (including `VIEWER`); every mutation below requires
+        `ANALYST`.
+      operationId: listBbTemplates
       responses:
         '200':
-          description: Threshold configuration
+          description: Registered templates
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MatchThresholds'
-    patch:
-      tags: [matching]
-      summary: Update name-matching score thresholds  [planned — use PUT /config/matching instead]
-      operationId: updateMatchThresholds
+                type: array
+                items:
+                  $ref: '#/components/schemas/BbTemplate'
+    post:
+      tags: [bb-templates]
+      summary: Register a new template from JSON  [ANALYST role]
+      description: >
+        Creates a template from a JSON definition — the same shape the Excel import produces.
+        `templateSlug` (Template ID, e.g. `gs-blue-owl`) is the stable identity and is
+        auto-versioned (`gs-blue-owl-1`, …) when the slug already exists, so a create never
+        collides. Use `PUT /bb-templates/{id}` to replace an existing definition in place.
+      operationId: createBbTemplate
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MatchThresholds'
+              $ref: '#/components/schemas/BbTemplateRequest'
+      responses:
+        '201':
+          description: Created template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BbTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Caller does not hold the ANALYST role
+
+  /bb-templates/{id}:
+    get:
+      tags: [bb-templates]
+      summary: Get one template by id
+      operationId: getBbTemplate
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
       responses:
         '200':
-          description: Updated thresholds
-
-  # ── BB Templates ──────────────────────────────────────────────────────────────
+          description: Template profile including tabs and group sections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BbTemplate'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [bb-templates]
+      summary: Replace a template definition  [ANALYST role]
+      description: >
+        Full replacement — `tabs` and their `groups` are replaced wholesale, not merged, so the
+        body must carry the complete definition.
+      operationId: updateBbTemplate
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BbTemplateRequest'
+      responses:
+        '200':
+          description: Updated template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BbTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Caller does not hold the ANALYST role
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [bb-templates]
+      summary: Delete a template and all its tabs and group sections  [ANALYST role]
+      operationId: deleteBbTemplate
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Template deleted
+        '403':
+          description: Caller does not hold the ANALYST role
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /bb-templates/import:
     post:
-      tags: [extraction]
-      summary: Import a structured BB template workbook (XLSX)
+      tags: [bb-templates]
+      summary: Import a structured BB template workbook (XLSX)  [ANALYST role]
       description: >
         Imports a BB template `*.xlsx` workbook and creates the corresponding
-        `bb_templates` row (with tabs). With `mode=upsert` an existing template with the
-        same `template_slug` is replaced instead of rejected, making the import idempotent —
-        this is how `pe-sub-jobs` pushes workbooks from its watched `data/bb-templates/`
-        directory on startup and rescan.
+        `bb_templates` row (with tabs). Expected sheets: `Template` (one data row), `Tabs`,
+        `Groups`. With `mode=upsert` an existing template with the same `template_slug` is
+        replaced instead of rejected, making the import idempotent — this is how `pe-sub-jobs`
+        pushes workbooks from its watched `data/bb-templates/` directory on startup and rescan.
       operationId: importBbTemplate
       parameters:
         - name: mode
@@ -1944,18 +2340,51 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                description: BB template profile (BbTemplateDto)
-                properties:
-                  id:             { type: integer }
-                  templateSlug:   { type: string }
-                  templateName:   { type: string }
-                  agentName:      { type: string }
-                  templateClass:  { type: string }
-                  sheetName:      { type: string, nullable: true }
-                  headerRowIndex: { type: integer, nullable: true }
-                  autoLearned:    { type: boolean }
-                  tabs:           { type: array, items: { type: object } }
+                $ref: '#/components/schemas/BbTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Caller does not hold the ANALYST role
+
+  /bb-templates/profile:
+    post:
+      tags: [bb-templates]
+      summary: Profile an unseen Agent BB workbook into a proposed template  [ANALYST role]
+      description: >
+        Self-adoption. Sends the uploaded workbook to `pe-sub-extraction`'s `/api/inspect`
+        (first 200 rows) and turns the structural signals into a proposed template —
+        header row, columns, tab layout, agent/title clues, and LP-category groups — for the
+        operator to review and save via `POST /bb-templates`. Deterministic, no AI, and
+        **persists nothing**. Every field comes back with a `confidence` and the `evidence`
+        behind it: structural facts (header row, columns, tab count) score high, semantic
+        guesses (agent/fund name, group → LP-category mapping) score medium or low for
+        one-click confirmation.
+      operationId: profileBbTemplate
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                agentBank:
+                  type: string
+                  description: Known agent bank, used as a hint when the workbook has no clear clue
+      responses:
+        '200':
+          description: Proposed template, not persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateProposal'
+        '403':
+          description: Caller does not hold the ANALYST role
+        '502':
+          description: pe-sub-extraction unreachable — the workbook cannot be profiled
 
   # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -2262,6 +2691,17 @@ components:
       schema:
         type: integer
 
+    ExpectedVersionQuery:
+      name: expectedVersion
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+      description: >
+        Optimistic-concurrency guard. Pass the `version` last read from the submission; the write
+        is rejected with `409` if it has changed since. Omit to write unconditionally.
+
   # ── Responses ────────────────────────────────────────────────────────────────
 
   responses:
@@ -2281,6 +2721,22 @@ components:
       description: Request conflicts with the current state of the resource
       content:
         application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotOwner:
+      description: >
+        Submission is owned by another analyst. Take it over
+        (`POST /submissions/{id}/take-over`) before editing.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    StaleVersion:
+      description: >
+        The submission changed elsewhere since `expectedVersion` was read. Reload before saving
+        to avoid overwriting newer work.
+      content:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
 
@@ -2454,8 +2910,8 @@ components:
         aum:                { type: string, nullable: true }
         nav:                { type: string, nullable: true }
         pensionAssets:      { type: string, nullable: true }
-        fundingRatio:       { type: number, nullable: true, description: Fraction, not percent — 0.9100 is 91% }
-        ubsDefaultAdvanceRate: { type: number, nullable: true, description: Fraction, not percent — 0.9000 is 90% }
+        fundingRatio:       { type: number, nullable: true, description: "Fraction, not percent — 0.9100 is 91%" }
+        ubsDefaultAdvanceRate: { type: number, nullable: true, description: "Fraction, not percent — 0.9000 is 90%" }
         ubsDefaultConcentrationLimit:
           type: string
           nullable: true
@@ -2689,11 +3145,14 @@ components:
 
     SubmissionStatus:
       type: string
-      enum: [Processing, Review, Processed, Aborted, Error]
+      enum: [Processing, Review, Pending Review, Processed, Aborted, Error]
       description: >
         Processing — extraction and matching running;
-        Review — awaiting credit officer action;
-        Processed — Shadow BB complete;
+        Review — awaiting credit officer action (also the state a rejected submission returns to,
+        where a non-empty `reviewNote` is the "Changes Requested" signal);
+        Pending Review — maker has submitted the Shadow BB run and it awaits a Manager's
+        independent review (set by POST /submissions/{id}/complete);
+        Processed — Shadow BB accepted by the checker;
         Aborted — cancelled by user;
         Error — extraction pipeline failed (pe-sub-extraction unreachable)
 
@@ -2711,6 +3170,12 @@ components:
         notes:               { type: string, nullable: true, description: Optional analyst notes submitted with the upload }
         wizardStep:          { type: integer, description: "Current ingestion wizard step: 1=Uploaded, 3=Extraction Review, 4=Matching Review, 5=Shadow BB" }
         shadowBbOverrides:   { type: object, nullable: true, description: Per-LP classification/rate overrides set on the Run Shadow BB screen }
+        version:             { type: integer, format: int64, nullable: true, description: Optimistic-concurrency version — echo it back as `expectedVersion` on writes that accept it }
+        ownerUuName:         { type: string, nullable: true, description: uuName of the analyst who owns the submission; only the owner or a Manager may mutate it }
+        ownerName:           { type: string, nullable: true, description: Display name of the owner }
+        submittedBy:         { type: string, nullable: true, description: uuName of the maker who submitted for review; cleared on reject so a re-submit re-stamps the actual submitter }
+        reviewedBy:          { type: string, nullable: true, description: uuName of the Manager (checker) who accepted or rejected }
+        reviewNote:          { type: string, nullable: true, description: Rejection rationale. Present with status Review and wizardStep 5 = "Changes Requested" }
         createdAt:           { type: string, format: date-time }
         updatedAt:           { type: string, format: date-time }
 
@@ -2735,7 +3200,7 @@ components:
         rowIndex:      { type: integer, description: Zero-based row index in the source spreadsheet }
         name:          { type: string }
         investorType:  { type: string, nullable: true, description: Investor Type as extracted from the schedule }
-        agentClass:    { type: string, nullable: true, description: LP classification as stated by agent, or derived when blank }
+        agentClass:    { type: string, nullable: true, description: "LP classification as stated by agent, or derived when blank" }
         agentClsSource: { type: string, nullable: true, description: "EXTRACTED — came from the Agent BB file; DERIVED — auto-assigned from Investor Type and profile data; empty — no classification available" }
         commit:        { type: string, nullable: true, description: Formatted capital commitment }
         uncalled:      { type: string, nullable: true, description: Formatted uncalled capital }
@@ -2854,7 +3319,7 @@ components:
         facilityId:    { type: integer }
         facilityName:  { type: string, description: Facility name resolved for display }
         agentName:     { type: string, description: Extracted investor name from the document }
-        masterName:    { type: string, nullable: true, description: Best-matched LP Master name, or masterNameOverride if set }
+        masterName:    { type: string, nullable: true, description: "Best-matched LP Master name, or masterNameOverride if set" }
         masterLpId:    { type: integer, nullable: true, description: LP Master id of the proposed match — always the matched child/feeder, never its parent }
         agentParent:   { type: string, nullable: true, description: Sponsor named by the agent document; feeds the Parent/Sponsor corroboration signal }
         masterParent:
@@ -3285,6 +3750,214 @@ components:
         skipped: { type: integer, description: Number of rows that could not be matched }
 
     # ── Errors ─────────────────────────────────────────────────────────────────
+
+    # ── BB template registry ───────────────────────────────────────────────────
+
+    BbTemplateGroup:
+      type: object
+      description: >
+        One LP-category group section inside a tab — the banded header row an agent uses to
+        separate LP blocks, mapped to the platform LP Category the rows below it belong to.
+      properties:
+        id:             { type: integer }
+        groupSort:      { type: integer, description: Order of the section within the tab }
+        headerText:     { type: string, description: 'Group header as it reads in the workbook, e.g. "Included Investors"' }
+        classification: { type: string, description: LP Category the rows under this header map to }
+
+    BbTemplateTab:
+      type: object
+      description: One sheet (or sleeve) within an Agent BB workbook and how to read it.
+      properties:
+        id:              { type: integer }
+        tabRole:
+          type: string
+          enum: [LP_GRID, CONCENTRATION, CAPITAL_CALL, TOP_SHEET]
+          description: What the tab is for; LP_GRID is the LP schedule the BB is built from
+        tabSort:         { type: integer, description: Order of the tab within the template }
+        sheetName:       { type: string, nullable: true, description: Worksheet name; null when tabs are auto-discovered }
+        sleeveName:      { type: string, nullable: true, description: Sleeve/tranche this tab covers, for multi-sleeve facilities }
+        headerRowIndex:  { type: integer, nullable: true, description: 0-based row holding the column headers }
+        headerRowSpan:   { type: integer, description: Number of rows the header occupies (>1 for stacked headers) }
+        skipRowKeywords:
+          type: array
+          items: { type: string }
+          description: Row-leading keywords marking subtotal/note rows to exclude from extraction
+        columns:
+          type: array
+          items: { type: string }
+          description: Column headers in workbook order
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/BbTemplateGroup'
+
+    BbTemplate:
+      type: object
+      description: A registered Agent BB workbook layout (BbTemplateDto).
+      properties:
+        id:             { type: integer }
+        templateSlug:   { type: string, description: 'Stable Template ID, e.g. "gs-blue-owl"; auto-versioned on create when the slug is taken' }
+        templateName:   { type: string }
+        agentName:      { type: string, nullable: true }
+        templateClass:
+          type: string
+          enum: [A, B, C]
+          description: Layout family the workbook belongs to
+        sheetName:      { type: string, nullable: true }
+        headerRowIndex: { type: integer, nullable: true, description: 0-based header row for the primary sheet }
+        autoLearned:    { type: boolean, description: true when the template was learned from a confirmed upload rather than authored }
+        trancheCount:   { type: integer }
+        hasGroupingRows: { type: boolean, description: Workbook separates LP blocks with banded group header rows }
+        hasColorFlags:   { type: boolean, description: Workbook conveys meaning through cell fill colour }
+        autoDiscoverTabs: { type: boolean, description: Match tabs by shape at extraction time instead of by fixed sheet name }
+        summaryRowsAboveHeader: { type: integer, description: Count of summary rows sitting above the header row }
+        summaryRowRange: { type: string, nullable: true, description: 'Excel range covering the summary block, e.g. "A1:H6"' }
+        titleRow:       { type: integer, nullable: true }
+        titleText:      { type: string, nullable: true }
+        detectKeys:
+          type: array
+          items: { type: string }
+          description: Strings whose presence identifies an uploaded workbook as this template
+        legend:
+          type: array
+          items:
+            type: object
+            additionalProperties: { type: string }
+          description: Colour/marker legend entries as key–value pairs
+        notes:
+          type: array
+          items: { type: string }
+        createdAt:      { type: string, format: date-time }
+        updatedAt:      { type: string, format: date-time }
+        tabs:
+          type: array
+          items:
+            $ref: '#/components/schemas/BbTemplateTab'
+
+    BbTemplateRequest:
+      type: object
+      description: >
+        Create/replace payload for a template (BbTemplateRequest). Mirrors the `bb_templates`
+        schema so one import workbook fully defines a template. On `POST` an existing
+        `templateSlug` is auto-versioned; on `PUT` the tabs and groups fully replace the stored
+        ones.
+      required: [templateName, templateClass, tabs]
+      properties:
+        templateSlug:   { type: string, description: Omit to derive one; auto-versioned when taken }
+        templateName:   { type: string, minLength: 1 }
+        agentName:      { type: string, nullable: true }
+        templateClass:
+          type: string
+          enum: [A, B, C]
+        sheetName:      { type: string, nullable: true }
+        headerRowIndex: { type: integer, nullable: true }
+        autoLearned:    { type: boolean, default: false }
+        trancheCount:   { type: integer, default: 0 }
+        hasGroupingRows: { type: boolean, default: false }
+        hasColorFlags:   { type: boolean, default: false }
+        autoDiscoverTabs: { type: boolean, default: false }
+        summaryRowsAboveHeader: { type: integer, default: 0 }
+        summaryRowRange: { type: string, nullable: true }
+        titleRow:       { type: integer, nullable: true }
+        titleText:      { type: string, nullable: true }
+        detectKeys:
+          type: array
+          items: { type: string }
+        legend:
+          type: array
+          items:
+            type: object
+            additionalProperties: { type: string }
+        notes:
+          type: array
+          items: { type: string }
+        tabs:
+          type: array
+          items:
+            type: object
+            required: [tabRole, groups]
+            properties:
+              tabRole:
+                type: string
+                enum: [LP_GRID, CONCENTRATION, CAPITAL_CALL, TOP_SHEET]
+              tabSort:        { type: integer, default: 0 }
+              sheetName:      { type: string, nullable: true }
+              sleeveName:     { type: string, nullable: true }
+              headerRowIndex: { type: integer, nullable: true }
+              headerRowSpan:  { type: integer, default: 1 }
+              skipRowKeywords:
+                type: array
+                items: { type: string }
+              columns:
+                type: array
+                items: { type: string }
+              groups:
+                type: array
+                items:
+                  type: object
+                  required: [headerText, classification]
+                  properties:
+                    groupSort:      { type: integer, default: 0 }
+                    headerText:     { type: string, minLength: 1 }
+                    classification: { type: string, minLength: 1 }
+
+    ProfiledField:
+      type: object
+      description: One profiled value with the confidence and the evidence behind it.
+      properties:
+        value:      { description: Profiled value — type depends on the field }
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        evidence:   { type: string, description: What in the workbook led to this value }
+
+    TemplateProposal:
+      type: object
+      description: >
+        A deterministic, no-AI template proposal derived from an uploaded workbook's structural
+        signals. Nothing is persisted — the operator confirms it and saves via
+        `POST /bb-templates`.
+      properties:
+        slug:      { $ref: '#/components/schemas/ProfiledField' }
+        agentName: { $ref: '#/components/schemas/ProfiledField' }
+        titleText: { $ref: '#/components/schemas/ProfiledField' }
+        workbook:
+          allOf:
+            - $ref: '#/components/schemas/ProfiledField'
+          description: 'Profiled value is "single" or "multiple" — whether the facility spans one workbook or several'
+        tabs:
+          type: array
+          items:
+            type: object
+            properties:
+              sheetName: { type: string }
+              headerRowIndex:
+                allOf:
+                  - $ref: '#/components/schemas/ProfiledField'
+                description: Profiled value is the 0-based header row
+              columns:
+                type: array
+                items: { type: string }
+              matchedCanonical:
+                type: integer
+                description: How many of this tab's headers mapped to a canonical LP field
+              groups:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    headerText:     { type: string }
+                    classification: { type: string }
+                    confidence:
+                      type: string
+                      enum: [high, medium, low]
+        autoDiscoverTabs: { $ref: '#/components/schemas/ProfiledField' }
+        detectKeys:
+          type: array
+          items: { type: string }
+        overallConfidence:
+          type: string
+          enum: [high, medium, low]
 
     ErrorResponse:
       type: object

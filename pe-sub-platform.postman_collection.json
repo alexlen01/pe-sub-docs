@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7a3b9f21-4d8c-4e6a-b1d5-2c9e8f0a7b3d",
     "name": "PE Sub Platform",
-    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\nâ”€â”€â”€â”€â”€â”€â”€â”€\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.8.0 and pe-sub-docs/openapi-extraction.yaml v1.0.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication â€” stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. POST /lpRecords/ingest requires the SERVICE role; config and field-mapping mutations require ANALYST. Public routes (/ping, /health, /notifications/**) carry no headers.",
+    "description": "REST API collection for the PE Subscription Borrowing Base Platform.\n\nServices\nâ”€â”€â”€â”€â”€â”€â”€â”€\n  pe-sub-api         http://localhost:3001   Core API\n  pe-sub-extraction  http://localhost:3002   Document extraction\n\nSync source: pe-sub-docs/openapi.yaml v0.10.0 and pe-sub-docs/openapi-extraction.yaml v1.0.0\n\nBefore running: update the collection variables (facilityId, lpId, etc.) to match your local seed data.\n\nAuthentication â€” stateless, header-based. In gateway mode every request must carry X-Auth-User and X-Auth-Roles (set the authUser/authRoles collection variables); a missing user header returns 401, an insufficient role 403. In dev mode (default local) the API injects a fixed dev identity, so the headers are optional and may be left as-is. The jobs feeds require SERVICE (POST /lpRecords/ingest, /lpRecords/seed, /facilities/ingest, /lp-master/ingest, /lp-master/clear, and PATCH /config/cls-conc-limit-defaults). Shadow BB review (POST /submissions/{id}/accept and /reject) requires MANAGER. Config, field-mapping, LP Master curation and BB template mutations require ANALYST. VIEWER is read-only: every GET under /api is open to any authenticated role, and all remaining writes are denied. Public routes (/ping, /health, /notifications/**) carry no headers.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -51,7 +51,25 @@
     {
       "key": "authRoles",
       "value": "ANALYST",
-      "description": "X-Auth-Roles value for gateway mode (ANALYST and/or MANAGER; ingest uses SERVICE)."
+      "description": "X-Auth-Roles value for gateway mode. ANALYST for normal operator work; MANAGER for submission accept/reject; SERVICE for the jobs ingest/seed/clear feeds; VIEWER is read-only."
+    },
+    {
+      "key": "lpMasterId",
+      "value": "1",
+      "type": "string",
+      "description": "lp_master row id"
+    },
+    {
+      "key": "templateId",
+      "value": "1",
+      "type": "string",
+      "description": "bb_templates row id"
+    },
+    {
+      "key": "extractedRowId",
+      "value": "1",
+      "type": "string",
+      "description": "The 'id' field of a row inside submission_extractions.extracted_lps"
     }
   ],
   "item": [
@@ -369,6 +387,81 @@
                 "description": "Permanently delete a facility. 204 on success, 404 if absent, 409 if it still has LP records. Cascades to non-LP dependents; audit history is preserved."
               },
               "response": []
+            },
+            {
+              "name": "Count facilities",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/facilities/count",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "count"
+                  ]
+                },
+                "description": "Row count only. Used by dashboards and by pe-sub-jobs to confirm an ingest landed."
+              },
+              "response": []
+            },
+            {
+              "name": "Ingest facility feed (jobs)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\n  {\n    \"name\": \"BCRED Fund IV\",\n    \"agentBank\": \"Citibank\",\n    \"accountNumber\": \"0012345678\",\n    \"loanAmount\": 500000000,\n    \"maturityDate\": \"2028-06-30\",\n    \"bankStatus\": \"Active\",\n    \"bankStatusDate\": \"2026-01-15\",\n    \"ubsParticipation\": 125000000,\n    \"collateralDate\": \"2026-05-31\"\n  }\n]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/facilities/ingest",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "facilities",
+                    "ingest"
+                  ]
+                },
+                "description": "SERVICE-gated bulk upsert from the pe-sub-jobs Agent Bank Summary CSV, keyed by name. Set authRoles=SERVICE. Platform-owned fields (status after creation, concLimitM, facilitySize, lastRunAt) are deliberately not part of the feed."
+              },
+              "response": []
             }
           ]
         },
@@ -382,8 +475,13 @@
                 "header": [],
                 "url": {
                   "raw": "{{base}}/api/lp-master",
-                  "host": [ "{{base}}" ],
-                  "path": [ "api", "lp-master" ]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master"
+                  ]
                 },
                 "description": "Bank-wide LP Master store, ordered by UBS classification then investor name. Distinct from /api/lpRecords (per-facility computed records)."
               },
@@ -396,8 +494,14 @@
                 "header": [],
                 "url": {
                   "raw": "{{base}}/api/lp-master/count",
-                  "host": [ "{{base}}" ],
-                  "path": [ "api", "lp-master", "count" ]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "count"
+                  ]
                 },
                 "description": "Returns { count } — number of LP Master records."
               },
@@ -410,8 +514,14 @@
                 "header": [],
                 "url": {
                   "raw": "{{base}}/api/lp-master/investor-types",
-                  "host": [ "{{base}}" ],
-                  "path": [ "api", "lp-master", "investor-types" ]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "investor-types"
+                  ]
                 },
                 "description": "Sorted, de-duplicated non-blank investor-type values across the LP Master. New July 2026; populates the investor-type select in the UI. Complements the derive-on-ingest classification (InvestorTypeDeriver)."
               },
@@ -424,10 +534,230 @@
                 "header": [],
                 "url": {
                   "raw": "{{base}}/api/lp-master/1",
-                  "host": [ "{{base}}" ],
-                  "path": [ "api", "lp-master", "1" ]
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "1"
+                  ]
                 },
                 "description": "Single LP Master record by id (404 if absent)."
+              },
+              "response": []
+            },
+            {
+              "name": "Get LP Master children",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/{{lpMasterId}}/children",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "{{lpMasterId}}",
+                    "children"
+                  ]
+                },
+                "description": "Direct children of this LP Master row (rows whose parent link resolves here)."
+              },
+              "response": []
+            },
+            {
+              "name": "Get LP Master aliases",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/{{lpMasterId}}/aliases",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "{{lpMasterId}}",
+                    "aliases"
+                  ]
+                },
+                "description": "Known alternate names that route to this LP Master row."
+              },
+              "response": []
+            },
+            {
+              "name": "Update LP Master record",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"investorName\": \"Blackstone Strategic Partners IX\",\n  \"parent\": \"Blackstone Inc.\",\n  \"parentId\": null,\n  \"spv\": false,\n  \"highQuality\": true,\n  \"investmentGrade\": true,\n  \"investorType\": \"Pension Fund\",\n  \"institutionalOrHnw\": \"Institutional\",\n  \"regionLocation\": \"North America\",\n  \"ubsLpCategory\": \"Rated Included\",\n  \"spRating\": \"A+\",\n  \"moodysRating\": \"A1\",\n  \"fitchRating\": \"A+\",\n  \"aum\": \"125000000000\",\n  \"nav\": \"48000000000\",\n  \"pensionAssets\": \"\",\n  \"fundingRatio\": 0.92,\n  \"ubsDefaultAdvanceRate\": 0.9,\n  \"ubsDefaultConcentrationLimit\": \"7.5%\",\n  \"notes\": \"\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/lp-master/{{lpMasterId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "{{lpMasterId}}"
+                  ]
+                },
+                "description": "ANALYST-gated curation. Full replace of the editable subset, not a sparse patch — the panel submits every field it renders, so an omitted value means \"cleared\". parentId wins over parent when both are sent; a parent name that matches no row yet is retained as display text and links on the next save."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete LP Master record",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/{{lpMasterId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "{{lpMasterId}}"
+                  ]
+                },
+                "description": "ANALYST-gated hard delete — the correction path for rows ingested past analyst checks. Facility LP records referencing the row are detached, not deleted. 204 on success."
+              },
+              "response": []
+            },
+            {
+              "name": "Ingest LP Master feed (jobs)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\n  {\n    \"investorName\": \"Blackstone Strategic Partners IX\",\n    \"parent\": \"Blackstone Inc.\",\n    \"spv\": false,\n    \"highQuality\": true,\n    \"investorType\": \"Pension Fund\",\n    \"institutionalOrHnw\": \"Institutional\",\n    \"regionLocation\": \"North America\",\n    \"investmentGrade\": true,\n    \"spRating\": \"A+\",\n    \"moodysRating\": \"A1\",\n    \"fitchRating\": \"A+\",\n    \"aum\": \"125000000000\",\n    \"nav\": \"48000000000\",\n    \"pensionAssets\": \"\",\n    \"fundingRatio\": \"92%\",\n    \"ubsLpCategory\": \"Rated Included\",\n    \"ubsDefaultAdvanceRate\": \"90%\",\n    \"ubsDefaultConcentrationLimit\": \"7.5%\",\n    \"notes\": \"\"\n  }\n]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/lp-master/ingest",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "ingest"
+                  ]
+                },
+                "description": "SERVICE-gated bulk upsert from the analyst-compiled LP Master CSV, keyed by investorName. The whole profile is replaced with feed values. Set authRoles=SERVICE."
+              },
+              "response": []
+            },
+            {
+              "name": "Clear LP Master (jobs pre-step)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/lp-master/clear",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lp-master",
+                    "clear"
+                  ]
+                },
+                "description": "SERVICE-gated full wipe ahead of a repopulate from the LP DB extract feed (\"override, do not preserve\"). Machine-only — kept SERVICE rather than ANALYST so a human curation token can never trigger a table-wide clear. Facility LP records are detached, not deleted. Idempotent. Set authRoles=SERVICE."
               },
               "response": []
             }
@@ -870,6 +1200,67 @@
                 "description": "Bulk upsert of lp_rates for one effectiveDate (YYYY-MM). LP lookup is by case-insensitive investor name; unmatched names are skipped. Idempotent. Returns 201 with { saved: <count> }. Rates are decimal fractions 0.0â€“1.0."
               },
               "response": []
+            },
+            {
+              "name": "Count LP records",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/lpRecords/count",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lpRecords",
+                    "count"
+                  ]
+                },
+                "description": "Row count across all facilities."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete LP record",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/lpRecords/{{lpId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "lpRecords",
+                    "{{lpId}}"
+                  ]
+                }
+              },
+              "response": []
             }
           ]
         },
@@ -1102,6 +1493,150 @@
                   ]
                 },
                 "description": "Effective Advance Rate history from BB snapshots: array of { calculatedAt, ear, agentEar, earDelta } data points."
+              },
+              "response": []
+            },
+            {
+              "name": "Collateral certificate (PDF)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/reports/collateral/{{facilityId}}/pdf?watermark=DRAFT - For Internal Review",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "collateral",
+                    "{{facilityId}}",
+                    "pdf"
+                  ],
+                  "query": [
+                    {
+                      "key": "watermark",
+                      "value": "DRAFT - For Internal Review"
+                    }
+                  ]
+                },
+                "description": "Same snapshot data as the collateral report, rendered as a downloadable PDF. Add snapshotId to pin a specific snapshot; pass an empty watermark for an unwatermarked final copy. Section flags (catSummary, coverageTrend, concAnalysis, reclass, quality) all default to true. In Postman use \"Send and Download\" to save the file."
+              },
+              "response": []
+            },
+            {
+              "name": "Agent bank exposure",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/reports/agent-banks",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "agent-banks"
+                  ]
+                },
+                "description": "Portfolio-level exposure grouped by agent bank."
+              },
+              "response": []
+            },
+            {
+              "name": "List report history",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/reports/history",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "history"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Record report history entry",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"report\": \"Collateral Market Value & Coverage\",\n  \"facilityId\": 1,\n  \"snapshotLabel\": \"2026-05-31\",\n  \"format\": \"PDF\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/reports/history",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reports",
+                    "history"
+                  ]
+                },
+                "description": "Logs that a report was generated/exported. Returns 201 with the stored entry, stamped with the caller identity."
               },
               "response": []
             }
@@ -1615,6 +2150,462 @@
                 "description": "Re-runs the full extraction pipeline using the stored file plus any saved column remappings and BB template hints for the agent bank. Returns 204 No Content on success. Returns 502 if pe-sub-extraction is unreachable."
               },
               "response": []
+            },
+            {
+              "name": "Discard extracted row",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/extracted-lps/{{extractedRowId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "extracted-lps",
+                    "{{extractedRowId}}"
+                  ]
+                },
+                "description": "Drops one row from the Review Extraction step — a stray subtotal or note line the extractor picked up. The path takes the row's id field, not its array position. Owner-or-Manager only; 204 on success."
+              },
+              "response": []
+            },
+            {
+              "name": "Accept Shadow BB (checker)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/accept",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "accept"
+                  ]
+                },
+                "description": "MANAGER-only — set authRoles=MANAGER. The only route that finalizes a cycle: submission → Processed, facility → Active with lastRunAt stamped, credit profile written back to LP Master, live reclassified flags cleared. 409 unless the submission is Pending Review."
+              },
+              "response": []
+            },
+            {
+              "name": "Reject Shadow BB (checker)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Concentration limit for Blackstone looks stale \\u2014 re-check the agent file.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/reject",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "reject"
+                  ]
+                },
+                "description": "MANAGER-only — set authRoles=MANAGER. Returns the submission to Review at step 5 with the reason stored in reviewNote (that pair is the \"Changes Requested\" signal), and the facility to Needs Review. A blank or missing reason returns 400; 409 unless Pending Review."
+              },
+              "response": []
+            },
+            {
+              "name": "Take over submission",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/submissions/{{submissionId}}/take-over",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "{{submissionId}}",
+                    "take-over"
+                  ]
+                },
+                "description": "Reassigns ownership to the caller so a colleague's submission becomes editable (other mutations return 403 for non-owners). The previous owner is notified over SSE. Idempotent; 409 on a Processed or Aborted submission."
+              },
+              "response": []
+            },
+            {
+              "name": "Re-run Shadow BB for review",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/submissions/facilities/{{facilityId}}/rerun-for-review",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "submissions",
+                    "facilities",
+                    "{{facilityId}}",
+                    "rerun-for-review"
+                  ]
+                },
+                "description": "For re-runs started from the Shadow BB results screen where no upload-backed submission exists (seeded facilities). Calculates and snapshots the BB, then creates a new submission already at Pending Review and rolls the facility to Pending Review. 201 with { snapshot, submission }."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "BB Templates",
+          "description": "Agent BB workbook layout registry. Any authenticated role may read; every mutation is ANALYST-gated.",
+          "item": [
+            {
+              "name": "List BB templates",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/bb-templates",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates"
+                  ]
+                },
+                "description": "The registry, each entry carrying its tabs and LP-category group sections."
+              },
+              "response": []
+            },
+            {
+              "name": "Get BB template",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/bb-templates/{{templateId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates",
+                    "{{templateId}}"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Create BB template",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"templateSlug\": \"gs-blue-owl\",\n  \"templateName\": \"Blue Owl GP Stakes V \\u2014 Agent BB\",\n  \"agentName\": \"Wells Fargo\",\n  \"templateClass\": \"A\",\n  \"sheetName\": \"LP Schedule\",\n  \"headerRowIndex\": 6,\n  \"autoLearned\": false,\n  \"trancheCount\": 1,\n  \"hasGroupingRows\": true,\n  \"hasColorFlags\": false,\n  \"autoDiscoverTabs\": false,\n  \"summaryRowsAboveHeader\": 5,\n  \"summaryRowRange\": \"A1:H5\",\n  \"titleRow\": 1,\n  \"titleText\": \"Blue Owl GP Stakes V \\u2014 Borrowing Base\",\n  \"detectKeys\": [\n    \"Blue Owl GP Stakes\",\n    \"Borrowing Base Certificate\"\n  ],\n  \"legend\": [\n    {\n      \"colour\": \"green\",\n      \"meaning\": \"Included investor\"\n    }\n  ],\n  \"notes\": [\n    \"Group header rows separate included and excluded investors.\"\n  ],\n  \"tabs\": [\n    {\n      \"tabRole\": \"LP_GRID\",\n      \"tabSort\": 0,\n      \"sheetName\": \"LP Schedule\",\n      \"sleeveName\": null,\n      \"headerRowIndex\": 6,\n      \"headerRowSpan\": 1,\n      \"skipRowKeywords\": [\n        \"Total\",\n        \"Subtotal\",\n        \"Grand Total\"\n      ],\n      \"columns\": [\n        \"Investor\",\n        \"Commitment\",\n        \"Uncalled\",\n        \"AUM\",\n        \"Advance Rate\",\n        \"Concentration Limit\"\n      ],\n      \"groups\": [\n        {\n          \"groupSort\": 0,\n          \"headerText\": \"Included Investors\",\n          \"classification\": \"Rated Included\"\n        },\n        {\n          \"groupSort\": 1,\n          \"headerText\": \"Excluded Investors\",\n          \"classification\": \"Excluded\"\n        }\n      ]\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/bb-templates",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates"
+                  ]
+                },
+                "description": "ANALYST-gated. templateSlug is the stable Template ID and is auto-versioned (\"gs-blue-owl-1\", …) when it already exists, so a create never collides — use PUT to replace a definition in place. 201 with the stored template."
+              },
+              "response": []
+            },
+            {
+              "name": "Replace BB template",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"templateSlug\": \"gs-blue-owl\",\n  \"templateName\": \"Blue Owl GP Stakes V \\u2014 Agent BB\",\n  \"agentName\": \"Wells Fargo\",\n  \"templateClass\": \"A\",\n  \"sheetName\": \"LP Schedule\",\n  \"headerRowIndex\": 6,\n  \"autoLearned\": false,\n  \"trancheCount\": 1,\n  \"hasGroupingRows\": true,\n  \"hasColorFlags\": false,\n  \"autoDiscoverTabs\": false,\n  \"summaryRowsAboveHeader\": 5,\n  \"summaryRowRange\": \"A1:H5\",\n  \"titleRow\": 1,\n  \"titleText\": \"Blue Owl GP Stakes V \\u2014 Borrowing Base\",\n  \"detectKeys\": [\n    \"Blue Owl GP Stakes\"\n  ],\n  \"legend\": [],\n  \"notes\": [],\n  \"tabs\": [\n    {\n      \"tabRole\": \"LP_GRID\",\n      \"tabSort\": 0,\n      \"sheetName\": \"LP Schedule\",\n      \"sleeveName\": null,\n      \"headerRowIndex\": 6,\n      \"headerRowSpan\": 1,\n      \"skipRowKeywords\": [\n        \"Total\"\n      ],\n      \"columns\": [\n        \"Investor\",\n        \"Commitment\",\n        \"Uncalled\"\n      ],\n      \"groups\": [\n        {\n          \"groupSort\": 0,\n          \"headerText\": \"Included Investors\",\n          \"classification\": \"Rated Included\"\n        }\n      ]\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/bb-templates/{{templateId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates",
+                    "{{templateId}}"
+                  ]
+                },
+                "description": "ANALYST-gated full replacement — tabs and groups are replaced wholesale, not merged, so the body must carry the complete definition. Same shape as Create."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete BB template",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/bb-templates/{{templateId}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates",
+                    "{{templateId}}"
+                  ]
+                },
+                "description": "ANALYST-gated. Deletes the template with all its tabs and group sections. 204."
+              },
+              "response": []
+            },
+            {
+              "name": "Import BB template workbook",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "src": "",
+                      "type": "file",
+                      "description": "Structured template workbook (XLSX)"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base}}/api/bb-templates/import?mode=upsert",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates",
+                    "import"
+                  ],
+                  "query": [
+                    {
+                      "key": "mode",
+                      "value": "upsert"
+                    }
+                  ]
+                },
+                "description": "ANALYST-gated. Imports a structured *.xlsx (sheets: Template with one data row, Tabs, Groups). mode=create rejects a duplicate template_slug; mode=upsert replaces it in place, which is how pe-sub-jobs pushes its watched data/bb-templates/ directory idempotently on startup and rescan. 201."
+              },
+              "response": []
+            },
+            {
+              "name": "Profile workbook (self-adoption)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "src": "",
+                      "type": "file",
+                      "description": "Agent BB workbook to profile (XLSX)"
+                    },
+                    {
+                      "key": "agentBank",
+                      "value": "",
+                      "type": "text",
+                      "description": "Optional hint used when the workbook has no clear agent clue",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base}}/api/bb-templates/profile",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "bb-templates",
+                    "profile"
+                  ]
+                },
+                "description": "ANALYST-gated. Profiles an unseen Agent BB workbook into a proposed template — header row, columns, tab layout, agent/title clues, LP-category groups — for the operator to review and save via Create. Deterministic, no AI, and persists nothing. Every field carries a confidence and the evidence behind it. 502 when pe-sub-extraction is unreachable."
+              },
+              "response": []
             }
           ]
         },
@@ -2040,9 +3031,9 @@
               "response": []
             },
             {
-              "name": "[PLANNED] Get matching thresholds",
+              "name": "Discard queue item",
               "request": {
-                "method": "GET",
+                "method": "DELETE",
                 "header": [
                   {
                     "key": "X-Auth-User",
@@ -2052,26 +3043,27 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
                   }
                 ],
                 "url": {
-                  "raw": "{{base}}/api/matching/thresholds",
+                  "raw": "{{base}}/api/matching/queue/{{matchQueueItemId}}",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
                     "matching",
-                    "thresholds"
+                    "queue",
+                    "{{matchQueueItemId}}"
                   ]
                 },
-                "description": "[PLANNED] Use GET /api/config/matching instead â€” thresholds are stored under matching_config."
+                "description": "204 on success, 404 if the entry no longer exists."
               },
               "response": []
             },
             {
-              "name": "[PLANNED] Update matching thresholds",
+              "name": "Resolve queue items (batch)",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -2087,12 +3079,12 @@
                   {
                     "key": "X-Auth-Roles",
                     "value": "{{authRoles}}",
-                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE)."
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
                   }
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"autoAccept\": 90,\n  \"reviewQueue\": 70\n}",
+                  "raw": "{\n  \"decisions\": [\n    {\n      \"id\": 1,\n      \"decision\": \"accepted\",\n      \"masterName\": null\n    },\n    {\n      \"id\": 2,\n      \"decision\": \"rejected\",\n      \"masterName\": null\n    },\n    {\n      \"id\": 3,\n      \"decision\": \"accepted\",\n      \"masterName\": \"Blackstone Strategic Partners IX\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2100,17 +3092,18 @@
                   }
                 },
                 "url": {
-                  "raw": "{{base}}/api/matching/thresholds",
+                  "raw": "{{base}}/api/matching/queue/decisions",
                   "host": [
                     "{{base}}"
                   ],
                   "path": [
                     "api",
                     "matching",
-                    "thresholds"
+                    "queue",
+                    "decisions"
                   ]
                 },
-                "description": "[PLANNED] Use PUT /api/config/matching instead."
+                "description": "Applies many accept/reject decisions in one request and transaction — what the Match Queue fires on a bulk Accept/Reject instead of N per-row PATCHes. A non-blank masterName forces the decision to Accepted and re-resolves routing. The literal \"decisions\" segment is matched ahead of {id}, so it never collides with the single-item PATCH."
               },
               "response": []
             }
@@ -2437,6 +3430,50 @@
                 "description": "Returns the report_config JSON from the DB cache. Returns 404 until the report_config row is seeded â€” the UI falls back to its local reportConfig.ts constants."
               },
               "response": []
+            },
+            {
+              "name": "Merge conc-limit defaults (jobs)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"Rated Included\": 7.5,\n  \"Non-Rated Included\": 5.0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base}}/api/config/cls-conc-limit-defaults",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "config",
+                    "cls-conc-limit-defaults"
+                  ]
+                },
+                "description": "SERVICE-gated config feed — a jsonb merge, so only the classes sent are touched and the in-memory cache is current immediately (no follow-up reload). Operators edit the same map via PUT /api/config/eligibility instead. Empty body returns 400. Set authRoles=SERVICE."
+              },
+              "response": []
             }
           ]
         },
@@ -2531,6 +3568,103 @@
                   ]
                 },
                 "description": "Server-Sent Events stream. Broadcasts facility status changes, BB runs, LP reclassifications detected during record Save, and upload events in real time. Keep the connection open; events arrive as 'data: ...' lines. Note: Postman supports SSE via the 'Send' button."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Users",
+          "description": "Caller identity and the directory mirrored from the gateway's X-Auth-* headers. Read-only: there is no user-creation endpoint, because the SSO gateway is the source of truth and every authenticated request upserts its own directory entry.",
+          "item": [
+            {
+              "name": "Get current user",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/users/me",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "users",
+                    "me"
+                  ]
+                },
+                "description": "Resolved identity and roles for the caller — in dev mode, the injected dev identity."
+              },
+              "response": []
+            },
+            {
+              "name": "List users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/users",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "users"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get user by uuName",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-Auth-User",
+                    "value": "{{authUser}}",
+                    "description": "Gateway mode only: authenticated user id/email injected by the SSO reverse proxy. Optional in dev mode (a fixed dev identity is injected server-side)."
+                  },
+                  {
+                    "key": "X-Auth-Roles",
+                    "value": "{{authRoles}}",
+                    "description": "Gateway mode only: comma-separated roles (ANALYST, MANAGER, SERVICE, VIEWER)."
+                  }
+                ],
+                "url": {
+                  "raw": "{{base}}/api/users/{{authUser}}",
+                  "host": [
+                    "{{base}}"
+                  ],
+                  "path": [
+                    "api",
+                    "users",
+                    "{{authUser}}"
+                  ]
+                },
+                "description": "Directory lookup by uuName (the users-directory key, not a display name)."
               },
               "response": []
             }

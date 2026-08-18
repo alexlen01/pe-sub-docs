@@ -103,7 +103,9 @@ paths:
         `Subtotal`, …) are filtered. `sheetNameHint` / `headerRowHint` override heuristic detection
         when provided; `aliasConfig` (the live FM Dictionary from `pe-sub-api`) overrides built-in
         aliases. A row's `requiresReview` is set `true` when any field is missing or a header's
-        confidence is below 0.70.
+        confidence is below 0.70. Extraction tuning (header-confidence threshold, header search
+        depth, inspect row limit) lives in `app.extraction.*` configuration, not in the pipeline
+        classes.
       operationId: extract
       requestBody:
         required: true
@@ -228,8 +230,8 @@ components:
           items: { type: string }
           description: >
             Header texts whose best Jaro-Winkler score against the alias dictionary fell below the
-            0.95 recognition threshold (`HeaderMatcher.MIN_CONFIDENCE`). Surfaced for manual remap
-            in the UI — never silently dropped.
+            configured recognition threshold (`app.extraction.min-header-confidence`, default
+            `0.900`). Surfaced for manual remap in the UI — never silently dropped.
 
     TemplateDetection:
       type: object
@@ -268,6 +270,13 @@ components:
         warnings:
           type: array
           items: { $ref: '#/components/schemas/ExtractionWarning' }
+        fundSleeve:
+          type: string
+          nullable: true
+          description: >
+            Source sheet name for multi-tab extraction (`sheetNames` or `autoDiscoverTabs`),
+            identifying which sleeve/tranche the row came from once per-sheet results are merged
+            into one payload. Null for single-sheet extraction.
 
     FieldExtraction:
       type: object
@@ -283,10 +292,12 @@ components:
           minimum: 0
           maximum: 1
           description: >
-            Header-match confidence from Jaro-Winkler similarity between the source column header
-            and the matched alias: an exact alias match scores 1.0. A column is only recognised
-            when its best score is ≥ 0.95 (`HeaderMatcher.MIN_CONFIDENCE`); otherwise the header is
-            returned in `unrecognizedColumns`. A present value whose confidence is below 0.70
+            Header-match confidence. Matching is two-tier: a header equal to the canonical field
+            name matches at 1.0 without fuzzy scoring; everything else is scored by Jaro-Winkler
+            similarity against the registered aliases. A column is only recognised when its best
+            score is ≥ `app.extraction.min-header-confidence` (default `0.900`, overridable via
+            `APP_EXTRACTION_MIN_HEADER_CONFIDENCE`); otherwise the header is returned in
+            `unrecognizedColumns`. A present value whose confidence is below 0.70
             (`FieldExtraction.LOW_CONFIDENCE_THRESHOLD`) is flagged low-confidence and sets the
             row's `requiresReview`.
         sourceHeader:
@@ -325,39 +336,10 @@ components:
     TemplateFormat:
       type: string
       description: >
-        Detected bank template format (mirrors `TemplateFormat.java`). `UNKNOWN` when no format
-        matches. The first group is the active UBS PE sub-line agent-bank portfolio; the second is
-        legacy / inactive (retained for historical submissions — `GOLDMAN_SACHS` is the prior agent
-        for Blue Owl GP Stakes V, now agented by Wells Fargo); the last two are utility values.
+        Legacy placeholder on `TemplateDetection` (mirrors `TemplateFormat.java`, which
+        deliberately carries no named values). Agent-bank and fund identity are no longer
+        detected in the engine — template recognition lives in `pe-sub-api` against the
+        `bb_templates` registry, and the resolved template is pushed back to the engine as
+        parameters. This field is therefore always `UNKNOWN`.
       enum:
-        # ── Active agent banks ──────────────────────────────
-        - BANK_OF_AMERICA
-        - BMO
-        - BNY_MELLON
-        - CIBC
-        - CITY_NATIONAL
-        - CITIBANK
-        - JPM
-        - LLOYDS
-        - MIZUHO
-        - MORGAN_STANLEY
-        - MT_BANK
-        - NATIXIS
-        - PNC_BANK
-        - SILICON_VALLEY_BANK
-        - SMBC
-        - SOCIETE_GENERALE
-        - UBS_BANK_USA
-        - WELLS_FARGO
-        # ── Legacy / inactive ───────────────────────────────
-        - GOLDMAN_SACHS
-        - BARCLAYS
-        - FIFTH_THIRD
-        - HUNTINGTON
-        - WHITE_OAK
-        - ARES
-        - MIDCAP_FINANCIAL
-        - CITIZENS_FINANCIAL
-        # ── Utility ─────────────────────────────────────────
-        - INTERNAL
         - UNKNOWN
