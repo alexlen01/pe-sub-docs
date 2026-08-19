@@ -31,13 +31,13 @@ the previous outputs intact) and holds only the three CSVs — no report or log 
 
 ## 1. Source contract and how portable it is
 
-**LP DB Export** — one row per (facility account, investor), **29 columns** as of the
+**LP DB Export** — one row per (facility account, investor), **30 columns** as of the
 **2026-08-18** format (Appendix A).
 
 - Columns are addressed **by header name, not position**, so column order is irrelevant. The
   2026-08-18 reshuffle therefore cost no code change; only the added and removed columns did.
 - **Unknown columns are ignored**, so an export carrying extra columns reads fine.
-- Any of the 29 required names **missing** aborts the run with the list of what is missing and the
+- Any of the 30 required names **missing** aborts the run with the list of what is missing and the
   header that was found. This is the only hard failure in the script. A stale pre-2026-08-18
   workbook is additionally diagnosed as such, by name.
 - Header matching runs through `_norm()` (lowercase, runs of non-alphanumerics collapsed to one
@@ -49,7 +49,7 @@ the previous outputs intact) and holds only the three CSVs — no report or log 
   columns it has, and the readable headers the platform's own LP Records export writes (matching
   `pe-sub-ui/src/services/lpExportService.ts`), so a workbook exported from the UI can be fed
   straight back in.
-- **The UI exporter tracks this format.** `lpExportService.ts` writes the same 29 columns in source
+- **The UI exporter tracks this format.** `lpExportService.ts` writes the same 30 columns in source
   order, with two deliberate departures that `_norm()` treats as equivalent: it spells
   `Institutional vs HNW` correctly (the source misspells it "Insitutional") and writes
   `LP Size ($ Bil)` flat rather than with the source's embedded line break. It also writes rates and
@@ -74,16 +74,18 @@ the previous outputs intact) and holds only the three CSVs — no report or log 
 | Change | Columns |
 |---|---|
 | **Added** | `UBS LP Classification` (previously derived), `LP Size ($ Bil)` + `LP Size Criteria`, `Agent Excess Concentration`, `UBS Excess Concentration` |
-| **Removed** | `HQ` (High Quality), `InvestorType`, `Region`, `AUM` / `NAV` / `PensionAssets`, `FundingRatio`, `AgentAR` (Agent Advance Rate) |
+| **Removed** | `HQ` (High Quality), `InvestorType`, `Region`, `AUM` / `NAV` / `PensionAssets`, `FundingRatio` |
 
-32 − 8 + 5 = 29. The three consequences that reach beyond the reader:
+32 − 7 + 5 = 30. The three consequences that reach beyond the reader:
 
 - **`classify_ubs` is gone from the extract.** The export states the UBS classification outright,
   and four of the attributes the waterfall keyed on are no longer carried, so deriving it is neither
   possible nor wanted — the LP DB is the system of record for this field. The extract only
   *normalizes* the fed label now (`ubs_lp_categories.csv`), reporting what it cannot match.
-- **The agent advance rate is resolved, not read** (`agent_rate_map.csv`, mirroring
-  `classification_config.AGENT_RATE_MAP`).
+- **The agent advance rate is read from the export**, as it always was: `Agent Advance Rate`
+  survived the reshuffle (it moved to sit directly after `UBS Advance Rate`) and the fed value is
+  used as written. `agent_rate_map.csv` — mirroring `classification_config.AGENT_RATE_MAP` — is now
+  only the fallback for a row whose rate cell is blank, resolved from that row's Agent LP Category.
 - **`high_quality` left the feed entirely.** Nothing supplies it, so pe-sub-api keeps its column on
   the schema default (`TRUE`) rather than being fed a fabricated value. `LpMasterIngestRow.highQuality`
   is boxed for exactly this reason: as a primitive an absent field would deserialise to `false`,
@@ -187,12 +189,12 @@ basis. When consolidating LP Master, the pair is taken from the most recent subm
 **Advance rates.** `UBSAR` is slotted into the discrete rate groups by the Floor Map
 (`rate_floor_map.csv`): ≥ 90 → 90 · 75–89.9 → 75 · 65–74.9 → 65 · 50–64.9 → 50 · < 50 → 0.
 
-The **agent** advance rate is no longer in the export. It is resolved from the row's canonical Agent
-LP Category via `agent_rate_map.csv` and used **as written** — deliberately *not* floor-mapped. The
-Floor Map exists to tame a dirty *fed* rate; a value from the reference file is already canonical,
-and flooring it would silently turn Designated Institutional's configured 60% into 50%, since 60 is
-not one of the groups the UBS side uses. An unrecognised category yields no rate at all (counted in
-the report) rather than a fabricated one.
+The **agent** advance rate is read from the export's `Agent Advance Rate` column and used **as
+written** — deliberately *not* floor-mapped. The Floor Map slots a rate into the *bank's* own
+90/75/65/50/0 groups; the agent's schedule is not those groups, so flooring it would silently turn a
+Designated Institutional 60% into 50%. Only a blank or unparseable cell falls back to the rate the
+row's canonical Agent LP Category implies (`agent_rate_map.csv`); when the category is unrecognised
+too, the row gets no rate at all (counted in the report) rather than a fabricated one.
 
 **Excess concentration.** `Agent Excess Concentration` and `UBS Excess Concentration` are carried
 through to the matching `lp_records` columns, the same way the two borrowing bases already are. The
@@ -206,7 +208,7 @@ Editable CSVs seeded from `classification_config`; keep them in sync with Config
 |---|---|
 | `agent_lp_categories.csv` | export `Agent LP Classification` → `AGENT_CLS_OPTS` |
 | `ubs_lp_categories.csv` | export `UBS LP Classification` → `UBS_CLS_OPTS` (**added 2026-08-18**, now that the column is fed rather than derived) |
-| `agent_rate_map.csv` | Agent LP Category → agent advance rate, mirroring `AGENT_RATE_MAP` (**added 2026-08-18**, now that the export carries no agent rate). Used as written, not floor-mapped |
+| `agent_rate_map.csv` | Agent LP Category → agent advance rate, mirroring `AGENT_RATE_MAP`. The **fallback** for a row whose `Agent Advance Rate` cell is blank. Used as written, not floor-mapped |
 | `rate_floor_map.csv` | the Floor Map rate groups (applied to `UBSAR`) |
 | `bb_criteria_matrix.csv` | **not read by either script** — documents the taxonomy the labels come from |
 | `investor_types.csv` + `investor_type_aliases.csv` | **no longer read by either script** — the Investor Type column left the export on 2026-08-18. Kept because they mirror `INVESTOR_TYPE_OPTS` for the platform |
@@ -236,10 +238,10 @@ real LP DB file. Constants at the top: `EXPORT_OUT`, `SHEET_NAME`, `SEED`, `TARG
   LP's cap is `limit x total`, its excess is whatever its own uncalled exceeds that cap by, and each
   BB advances only on the uncalled that stays within the cap. The agent and UBS sides carry their own
   limits and so cut at different points on the same LP.
-- Its `AGENT_CATEGORIES` rates **must match `data/reference/agent_rate_map.csv`**. The export no
-  longer carries an agent rate, so the extract resolves it from the category — if the two drift, the
-  generated file stops reconciling, since its Agent BB would not equal the rate the extract assigns
-  times the eligible uncalled.
+- Its `AGENT_CATEGORIES` rate is written to the export's `Agent Advance Rate` column *and* is what
+  the generated Agent BB is computed with, so the file reconciles on its own terms. Keep the rates
+  **in step with `data/reference/agent_rate_map.csv`** anyway: that map is the extract's fallback
+  for a row whose rate cell is blank.
 - `SRC_HEADERS` reproduces the real file's header spellings **including their quirks** (the CRLF
   inside `LP Size
 
@@ -288,7 +290,7 @@ precision in the `NUMERIC(20,2)` columns on `lp_records`. When the panel is edit
 Export column → seed row field (`lp_facility_seeds.csv`); LP Master reuses the same field names for
 the golden subset.
 
-The 29 columns of the 2026-08-18 format, in file order.
+The 30 columns of the 2026-08-18 format, in file order.
 
 | # | Export header | Internal | Seed field |
 |---|---|---|---|
@@ -307,20 +309,24 @@ The 29 columns of the 2026-08-18 format, in file order.
 | 15 | `Capital Commitments` | `Commitments` | `capital_commitment` |
 | 16 | `Uncalled Capital` | `Uncalled` | `uncalled_capital` |
 | 17 | `UBS Advance Rate` | `UBSAR` | `ubs_advance_rate` (Floor-Mapped) |
-| 18 | `Agent Concentration Limit` | `AgentCL` | `agent_concentration_limit` |
-| 19 | `UBS Concentration Limit` | `UBSCL` | `ubs_concentration_limit` |
-| 20 | `% of Capital Commitments` | `PercentOfCommitments` | `pct_of_fund_commitments` |
-| 21 | `Called Capital` | `Called` | `called_capital` |
-| 22 | `% of Uncalled Capital` | `PercentOfUncalled` | `pct_of_fund_uncalled` |
-| 23 | `% of LP Called` | `CalledPercent` | `pct_lp_called` |
-| 24 | `Agent Excess Concentration` | `AgentExcessConc` | `agent_excess_concentration` |
-| 25 | `UBS Excess Concentration` | `UBSExcessConc` | `ubs_excess_concentration` |
-| 26 | `Agent Borrowing Base` | `AgentBB` | `agent_borrowing_base` |
-| 27 | `UBS Borrowing Base` | `UBSBB` | `ubs_borrowing_base` |
-| 28 | `Notes` | `Notes` | `notes` |
-| 29 | `BBDate` | `BBDate` | *(facility `collateral_date`)* |
+| 18 | `Agent Advance Rate` | `AgentAR` | `agent_advance_rate` (as fed; **not** floor-mapped) |
+| 19 | `Agent Concentration Limit` | `AgentCL` | `agent_concentration_limit` |
+| 20 | `UBS Concentration Limit` | `UBSCL` | `ubs_concentration_limit` |
+| 21 | `% of Capital Commitments` | `PercentOfCommitments` | `pct_of_fund_commitments` |
+| 22 | `Called Capital` | `Called` | `called_capital` |
+| 23 | `% of Uncalled Capital` | `PercentOfUncalled` | `pct_of_fund_uncalled` |
+| 24 | `% of LP Called` | `CalledPercent` | `pct_lp_called` |
+| 25 | `Agent Excess Concentration` | `AgentExcessConc` | `agent_excess_concentration` |
+| 26 | `UBS Excess Concentration` | `UBSExcessConc` | `ubs_excess_concentration` |
+| 27 | `Agent Borrowing Base` | `AgentBB` | `agent_borrowing_base` |
+| 28 | `UBS Borrowing Base` | `UBSBB` | `ubs_borrowing_base` |
+| 29 | `Notes` | `Notes` | `notes` |
+| 30 | `BBDate` | `BBDate` | *(facility `collateral_date`)* |
 
-Seed fields with **no export column**: `agent_advance_rate` (resolved from #9 via
-`agent_rate_map.csv`), and `investor_type` / `region_location` / `funding_ratio`, which stay in the
-CSV header but are written blank — the API reads blank as "not resubmitted" and leaves any stored
+#18 is used as written: the floor map slots a UBS rate into the bank's own 90/75/65/50/0 groups, and
+the agent's schedule is not those groups — flooring it would turn a Designated Institutional 60%
+into 50%. A blank cell falls back to the rate #9's category implies (`agent_rate_map.csv`).
+
+Seed fields with **no export column**: `investor_type` / `region_location` / `funding_ratio`, which
+stay in the CSV header but are written blank — the API reads blank as "not resubmitted" and leaves any stored
 value intact. `high_quality` is not a seed field at all any more.
