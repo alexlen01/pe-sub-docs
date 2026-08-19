@@ -31,23 +31,64 @@ the previous outputs intact) and holds only the three CSVs — no report or log 
 
 ## 1. Source contract and how portable it is
 
-**LP DB Export** — one row per (facility account, investor), 32 columns (Appendix A).
+**LP DB Export** — one row per (facility account, investor), **29 columns** as of the
+**2026-08-18** format (Appendix A).
 
-- Columns are addressed **by header name, not position**, so column order is irrelevant.
+- Columns are addressed **by header name, not position**, so column order is irrelevant. The
+  2026-08-18 reshuffle therefore cost no code change; only the added and removed columns did.
 - **Unknown columns are ignored**, so an export carrying extra columns reads fine.
-- Any of the 32 required names **missing** aborts the run with the list of what is missing and the
-  header that was found. This is the only hard failure in the script.
-- Two header vocabularies are accepted: the LP DB Export's own names (`SRC_COLS`) and the readable
-  headers the platform's own LP Records export writes (`PLATFORM_HEADERS`, matching
+- Any of the 29 required names **missing** aborts the run with the list of what is missing and the
+  header that was found. This is the only hard failure in the script. A stale pre-2026-08-18
+  workbook is additionally diagnosed as such, by name.
+- Header matching runs through `_norm()` (lowercase, runs of non-alphanumerics collapsed to one
+  space), which is what absorbs the format's own quirks without an alias per quirk: the **embedded
+  CRLF** in `LP Size\r\n($ Bil)`, the misspelt `Insitutional vs HNW`, the `Moody'S` capitalisation
+  and the trailing `?` on `Investment Grade?`.
+- `SRC_HEADERS` accepts three vocabularies at once: the current export's headers, the pre-2026-08-18
+  terse ones (`FndName`, `InvestorName`, `UBSAR`, …) so an archived workbook still parses for the
+  columns it has, and the readable headers the platform's own LP Records export writes (matching
   `pe-sub-ui/src/services/lpExportService.ts`), so a workbook exported from the UI can be fed
-  straight back in. Platform columns are also **de-formatted** on the way in — percents under a
-  `(%)` header (`94` → `0.94`), money display strings (`$428,800,000` → `428800000`), and
-  concentration limits that are a percent or an absolute cap in the same column.
+  straight back in.
+- **The UI exporter tracks this format.** `lpExportService.ts` writes the same 29 columns in source
+  order, with two deliberate departures that `_norm()` treats as equivalent: it spells
+  `Institutional vs HNW` correctly (the source misspells it "Insitutional") and writes
+  `LP Size ($ Bil)` flat rather than with the source's embedded line break. It also writes rates and
+  shares as **fractions** rather than percent numbers — the export's headers carry no `(%)` marker,
+  and a fraction is unambiguous on the way back in, whereas a 1% share written as `1` would be
+  indistinguishable from 100%. Consequently the file now carries excess concentration, a *computed*
+  column, because the export itself does; rank, eligibility, delta and the shadow-BB outcome still
+  belong to the Shadow BB export, not here.
+- **Numeric normalization is value-driven, not header-driven** (`normalize_numeric`). Four headers
+  are identical across the export and the platform's export — `% of Uncalled Capital`,
+  `% of LP Called`, `Agent Concentration Limit`, `UBS Concentration Limit` — but the values are
+  shaped differently (the export writes fractions, the platform writes percents and money display
+  strings). The header cannot tell them apart, so the shape of the value decides: a share or rate is
+  a fraction by definition, so anything carrying a `%` or exceeding 1 is scaled down, and `0.154` is
+  left alone. This is idempotent, so re-reading a normalized value is safe.
 - **Adapting to a foreign export** is therefore a header-alias exercise: add its names to
-  `PLATFORM_HEADERS` (plus the column to `PLATFORM_PERCENT_COLS` / `PLATFORM_MONEY_COLS` /
-  `PLATFORM_LIMIT_COLS` if its values are display-formatted). Only a genuinely absent field
-  requires more than that.
+  `SRC_HEADERS`. Only a genuinely absent field requires more than that.
 - Sheet: the first sheet, whatever it is named.
+
+### What changed on 2026-08-18
+
+| Change | Columns |
+|---|---|
+| **Added** | `UBS LP Classification` (previously derived), `LP Size ($ Bil)` + `LP Size Criteria`, `Agent Excess Concentration`, `UBS Excess Concentration` |
+| **Removed** | `HQ` (High Quality), `InvestorType`, `Region`, `AUM` / `NAV` / `PensionAssets`, `FundingRatio`, `AgentAR` (Agent Advance Rate) |
+
+32 − 8 + 5 = 29. The three consequences that reach beyond the reader:
+
+- **`classify_ubs` is gone from the extract.** The export states the UBS classification outright,
+  and four of the attributes the waterfall keyed on are no longer carried, so deriving it is neither
+  possible nor wanted — the LP DB is the system of record for this field. The extract only
+  *normalizes* the fed label now (`ubs_lp_categories.csv`), reporting what it cannot match.
+- **The agent advance rate is resolved, not read** (`agent_rate_map.csv`, mirroring
+  `classification_config.AGENT_RATE_MAP`).
+- **`high_quality` left the feed entirely.** Nothing supplies it, so pe-sub-api keeps its column on
+  the schema default (`TRUE`) rather than being fed a fabricated value. `LpMasterIngestRow.highQuality`
+  is boxed for exactly this reason: as a primitive an absent field would deserialise to `false`,
+  quietly flipping every LP out of the high-quality tier and firing the aggregate breach checks in
+  `BbCalculationService` that key off it.
 
 **Agent Bank Summary** (`AgentBankSummaryRpt.xlsx`) — this is the brittle input. It is a banded
 print layout, not a table, and its header **must match `ABS_COLS` positionally**
@@ -98,43 +139,64 @@ ubs_participation, collateral_date`
 
 ### `lp_master.csv` — `MASTER_COLS`
 One golden row per `investor_name`. An LP appears on many rows whose attributes may disagree, so
-**each field is chosen independently by majority vote** over that investor's non-blank values
-(`build_master` / `_best`); ties fall back to first occurrence and blanks do not vote. Investor Type
-is voted on its *canonical* mapping so spelling variants count together. Only stable golden fields
-are seeded — identity, ratings, financial scale, UBS credit defaults; nothing per-facility or
-per-cycle. `ubs_default_advance_rate` is written as a **fraction** (`0.9`).
+**each field is chosen independently by recency** (`build_master` / `_recent_first` / `_latest`):
+the value from the most recent BB run that actually reported it. A blank on a newer row means "not
+resubmitted this cycle", not "cleared", so the search falls through to the next-most-recent non-blank
+value rather than letting a blank erase a known one. LP Size and its criteria are taken as a **pair**
+from the same submission — a figure from one run with a measure label from another would mislabel the
+number. Only stable golden fields are seeded — identity, ratings, financial scale, UBS credit
+defaults; nothing per-facility or per-cycle. `ubs_default_advance_rate` is written as a **fraction**
+(`0.9`). `high_quality` is not written at all, and `investor_type` / `region_location` /
+`funding_ratio` go out blank (see §1).
 
 The job clears the table before loading (`lpMasterClearStep` → SERVICE-gated
 `POST /api/lp-master/clear`, which nulls `lp_records.lp_master_id` then deletes in batch), so a
 re-run leaves no stale rows.
 
 ### `lp_facility_seeds.csv` — `SEED_COLS`
-One row per (facility, investor), carrying **every per-LP export column**; only the facility-level
-`AccountID`/`FndName`/`BBDate` are excluded. Row values are authoritative on seed — the LP Master
-profile only fills fields a row left blank. `agent_advance_rate` / `ubs_advance_rate` are written as
-**percent strings** (`90%`), money as exact short currency (`$484M`, `$314.6M` — no rounding).
+One row per (facility, investor), 32 columns, carrying **every per-LP export column**; only the
+facility-level `AccountID`/`FndName`/`BBDate` are excluded. Row values are authoritative on seed —
+the LP Master profile only fills fields a row left blank. `agent_advance_rate` / `ubs_advance_rate`
+are written as **percent strings** (`90%`), money as exact short currency (`$484M`, `$314.6M` — no
+rounding). `high_quality` is no longer a column; `agent_excess_concentration` /
+`ubs_excess_concentration` were added with the 2026-08-18 format.
 
 `lp_rates` is out of scope; the script never writes it.
 
 ## 4. Derived values
 
-**UBS LP Category** (`ubs_lp_category`, on both master and seed rows) is derived per row from the
-row's own attributes by the `classify_ubs` waterfall — never from the export's `Classification`
-column, which is the **agent** LP Category:
+**UBS LP Category** (`ubs_lp_category`, on both master and seed rows) is **read from the export's
+own `UBS LP Classification` column** and normalized against `ubs_lp_categories.csv` — still never
+from `Agent LP Classification`, which is the **agent** LP Category. Unmatched labels are written
+through as given and counted in the run's normalization report; blank stays blank. Before
+2026-08-18 this was derived by a `classify_ubs` waterfall over ratings / pension assets / NAV / AUM /
+HNW / SPV — that logic now lives in `lp_db_generate.py`, which needs it to emit a coherent sample,
+and nowhere in the reader.
 
-1. agent category `Ineligible Investor` → `Excluded`
-2. any usable agency rating → `Rated Investor` (band via `eligible_band`: three ratings → median,
-   two → the lower, one → as-is; sub-BBB− clamps to BBB)
-3. HNW flag or agent `Designated PWM` → `HNW Feeder (acceptable)` if SPV, else `HNW (acceptable)`
-4. pension assets > $5Bn / > $1Bn → the two Corp Pension classes
-5. NAV > $1Bn → `Unrated NAV > $1Bn`
-6. Fund of Funds / Hedge Fund with AUM > $10Bn → `FoF & Other > $10Bn AUM`
-7. catch-all → `Other Institutional`
+**LP Size.** `LP Size ($ Bil)` is a figure in **billions** (a bare `13.5` means $13.5bn — unlike the
+old free-text AUM/NAV columns, where a bare number meant absolute dollars), and `LP Size Criteria`
+names which measure it is. The extract routes the figure back into whichever of
+`aum` / `nav` / `pension_assets` the criteria names (`AUM` → `aum`, `NAV` → `nav`,
+`Assets` → `pension_assets`) and formats it as a display string (`$13.5B`). That keeps pe-sub-api's
+contract and the UI's Size Measure derivation
+(`aum ? 'AUM' : nav ? 'NAV' : pension_assets ? 'Assets'`) working unchanged. An unrecognised
+criteria leaves all three blank rather than guessing a measure — the figure has no meaning without a
+basis. When consolidating LP Master, the pair is taken from the most recent submission that actually
+*resolves*, so one drifted criteria label does not blank an LP whose older rows state its size fine.
 
-The waterfall is total, so the value is never blank and there is no unmatched list.
-
-**Advance rates.** `UBSAR` and `AgentAR` are slotted into the discrete rate groups by the Floor Map
+**Advance rates.** `UBSAR` is slotted into the discrete rate groups by the Floor Map
 (`rate_floor_map.csv`): ≥ 90 → 90 · 75–89.9 → 75 · 65–74.9 → 65 · 50–64.9 → 50 · < 50 → 0.
+
+The **agent** advance rate is no longer in the export. It is resolved from the row's canonical Agent
+LP Category via `agent_rate_map.csv` and used **as written** — deliberately *not* floor-mapped. The
+Floor Map exists to tame a dirty *fed* rate; a value from the reference file is already canonical,
+and flooring it would silently turn Designated Institutional's configured 60% into 50%, since 60 is
+not one of the groups the UBS side uses. An unrecognised category yields no rate at all (counted in
+the report) rather than a fabricated one.
+
+**Excess concentration.** `Agent Excess Concentration` and `UBS Excess Concentration` are carried
+through to the matching `lp_records` columns, the same way the two borrowing bases already are. The
+Shadow BB engine remains server-authoritative; these are the agent-reported figures.
 
 ## 5. Reference lists (`pe-sub-jobs/data/reference/`)
 
@@ -142,10 +204,12 @@ Editable CSVs seeded from `classification_config`; keep them in sync with Config
 
 | File | Used for |
 |---|---|
-| `investor_types.csv` + `investor_type_aliases.csv` | Investor Type → `INVESTOR_TYPE_OPTS` (case/punctuation-insensitive + aliases) |
-| `agent_lp_categories.csv` | export `Classification` → `AGENT_CLS_OPTS` |
-| `rate_floor_map.csv` | the Floor Map rate groups |
-| `bb_criteria_matrix.csv` | **not read by either script** — the class thresholds live in `classify_ubs`; the file documents the taxonomy the labels come from |
+| `agent_lp_categories.csv` | export `Agent LP Classification` → `AGENT_CLS_OPTS` |
+| `ubs_lp_categories.csv` | export `UBS LP Classification` → `UBS_CLS_OPTS` (**added 2026-08-18**, now that the column is fed rather than derived) |
+| `agent_rate_map.csv` | Agent LP Category → agent advance rate, mirroring `AGENT_RATE_MAP` (**added 2026-08-18**, now that the export carries no agent rate). Used as written, not floor-mapped |
+| `rate_floor_map.csv` | the Floor Map rate groups (applied to `UBSAR`) |
+| `bb_criteria_matrix.csv` | **not read by either script** — documents the taxonomy the labels come from |
+| `investor_types.csv` + `investor_type_aliases.csv` | **no longer read by either script** — the Investor Type column left the export on 2026-08-18. Kept because they mirror `INVESTOR_TYPE_OPTS` for the platform |
 
 Nothing is auto-corrected by fuzzy match; unmatched values are written through as given and analysts
 curate the reference files.
@@ -161,17 +225,37 @@ real LP DB file. Constants at the top: `EXPORT_OUT`, `SHEET_NAME`, `SEED`, `TARG
 - An LP's identity, classification, ratings, scale and UBS profile are constant across its rows;
   only per-facility financials vary. Base values use the canonical vocabularies, so with chaos off
   the extract's unmatched counts are zero.
-- Rating presence follows the Agent LP Category, keeping the derived UBS mix near the real book's
-  ~40% Rated and leaving unrated LPs to exercise the other branches.
-- Its `SRC_COLS` must stay in step with the extract's — the extract requires all 32 names.
+- Rating presence follows the Agent LP Category, keeping the UBS mix near the real book's ~40%
+  Rated and leaving unrated LPs to exercise the other branches.
+- **`classify_ubs` lives here now**, not in the extract. The export states the UBS classification, so
+  the generator has to produce one that is consistent with the row's other attributes — and it is the
+  right place for the waterfall, because the generator knows the LP's truth while the reader only
+  knows what it is told. It runs on the clean values, before chaos.
+- **Excess concentration and the borrowing bases are computed together, after the per-facility
+  totals are known**: a concentration limit is a fraction of the facility's *total* uncalled, so an
+  LP's cap is `limit x total`, its excess is whatever its own uncalled exceeds that cap by, and each
+  BB advances only on the uncalled that stays within the cap. The agent and UBS sides carry their own
+  limits and so cut at different points on the same LP.
+- Its `AGENT_CATEGORIES` rates **must match `data/reference/agent_rate_map.csv`**. The export no
+  longer carries an agent rate, so the extract resolves it from the category — if the two drift, the
+  generated file stops reconciling, since its Agent BB would not equal the rate the extract assigns
+  times the eligible uncalled.
+- `SRC_HEADERS` reproduces the real file's header spellings **including their quirks** (the CRLF
+  inside `LP Size
+
+($ Bil)`, the misspelt `Insitutional`, `Moody'S`), which is much of the point:
+  a cleaned-up sample would not prove the reader copes. `SRC_COLS` (internal keys) must stay in step
+  with the extract's — the extract requires all 29.
 
 **Chaos monkey.** A clean simulated export is too clean to verify the extract's parsers, so the
 degradation is applied to the values **written to the XLSX** — the extract never degrades anything
 and treats whatever file it is given as source truth. Mutations follow the analyst "hierarchy of
 care": sacred cash/identity columns (`CHAOS_SACRED`: AccountID, FndName, Commitments, Called,
 Uncalled, BBDate, raw rates, BB values, percentages) are never touched; decision fields get
-formatting and categorical drift (`A minus`, `SWF`, `PWM`); afterthought fields get name suffix
-drops, ` - Tranche A`, case flips, M↔B unit mix-ups and range strings. Chaos draws from its own rng,
+formatting and categorical drift (`A minus`, `Rated`, `PWM`, `Total AUM`); afterthought fields get
+name suffix drops, ` - Tranche A`, case flips, and LP Size strings that argue with the column's $Bn
+unit — ranges (`5 - 8`), thresholds (`>12`), spelled units (`13.5 bn`) and, the costly one, figures
+typed in **millions** into a billions column. Chaos draws from its own rng,
 so the clean base dataset is identical with chaos on or off and the same `CHAOS_SEED` reproduces the
 same degradation. Mutation counts print per column and per pattern; no ground-truth log file is
 written. See `pe-sub-docs/AI Chaos Monkey for Data Quality.md`.
@@ -204,20 +288,39 @@ precision in the `NUMERIC(20,2)` columns on `lp_records`. When the panel is edit
 Export column → seed row field (`lp_facility_seeds.csv`); LP Master reuses the same field names for
 the golden subset.
 
-| Export | Seed field | Export | Seed field |
+The 29 columns of the 2026-08-18 format, in file order.
+
+| # | Export header | Internal | Seed field |
 |---|---|---|---|
-| `AccountID` | *(facility match only)* | `FundingRatio` | `funding_ratio` |
-| `FndName` | *(facility name lookup)* | `UBSAR` | `ubs_advance_rate` (Floor-Mapped) |
-| `BBDate` | *(facility `collateral_date`)* | `AgentAR` | `agent_advance_rate` (Floor-Mapped) |
-| `InvestorName` | `investor_name` | `Commitments` | `capital_commitment` |
-| `Parent` | `parent` | `PercentOfCommitments` | `pct_of_fund_commitments` |
-| `SPV` | `spv` | `Called` | `called_capital` |
-| `InvestorType` | `investor_type` (normalized) | `Uncalled` | `uncalled_capital` |
-| `Region` | `region_location` | `PercentOfUncalled` | `pct_of_fund_uncalled` |
-| `HQ` | `high_quality` | `CalledPercent` | `pct_lp_called` |
-| `InstitutionalHNW` | `institutional_or_hnw` | `AgentCL` | `agent_concentration_limit` |
-| `InvestmentGrade` | `investment_grade` | `UBSCL` | `ubs_concentration_limit` |
-| `Classification` | `agent_lp_category` (normalized) | `AgentBB` | `agent_borrowing_base` |
-| `SP` / `Moodys` / `Fitch` | `sp_rating` / `moodys_rating` / `fitch_rating` | `UBSBB` | `ubs_borrowing_base` |
-| `AUM` / `NAV` / `PensionAssets` | `aum` / `nav` / `pension_assets` | `Notes` | `notes` |
-| *(derived)* | `ubs_lp_category` | | |
+| 1 | `AccountID` | `AccountID` | *(facility identity)* |
+| 2 | `FndName` | `FndName` | *(facility name lookup)* |
+| 3 | `Investor Name` | `InvestorName` | `investor_name` |
+| 4 | `Parent` | `Parent` | `parent` |
+| 5 | `SPV` | `SPV` | `spv` |
+| 6 | `UBS LP Classification` | `UbsClassification` | `ubs_lp_category` (normalized) |
+| 7 | `Insitutional vs HNW` *(sic)* | `InstitutionalHNW` | `institutional_or_hnw` |
+| 8 | `Investment Grade?` | `InvestmentGrade` | `investment_grade` |
+| 9 | `Agent LP Classification` | `Classification` | `agent_lp_category` (normalized) |
+| 10–12 | `S&P` / `Moody'S` / `Fitch` | `SP` / `Moodys` / `Fitch` | `sp_rating` / `moodys_rating` / `fitch_rating` |
+| 13 | `LP Size\r\n($ Bil)` *(embedded CRLF)* | `LpSizeBil` | `aum` **or** `nav` **or** `pension_assets`, per #14 |
+| 14 | `LP Size Criteria` | `LpSizeCriteria` | *(routes #13)* |
+| 15 | `Capital Commitments` | `Commitments` | `capital_commitment` |
+| 16 | `Uncalled Capital` | `Uncalled` | `uncalled_capital` |
+| 17 | `UBS Advance Rate` | `UBSAR` | `ubs_advance_rate` (Floor-Mapped) |
+| 18 | `Agent Concentration Limit` | `AgentCL` | `agent_concentration_limit` |
+| 19 | `UBS Concentration Limit` | `UBSCL` | `ubs_concentration_limit` |
+| 20 | `% of Capital Commitments` | `PercentOfCommitments` | `pct_of_fund_commitments` |
+| 21 | `Called Capital` | `Called` | `called_capital` |
+| 22 | `% of Uncalled Capital` | `PercentOfUncalled` | `pct_of_fund_uncalled` |
+| 23 | `% of LP Called` | `CalledPercent` | `pct_lp_called` |
+| 24 | `Agent Excess Concentration` | `AgentExcessConc` | `agent_excess_concentration` |
+| 25 | `UBS Excess Concentration` | `UBSExcessConc` | `ubs_excess_concentration` |
+| 26 | `Agent Borrowing Base` | `AgentBB` | `agent_borrowing_base` |
+| 27 | `UBS Borrowing Base` | `UBSBB` | `ubs_borrowing_base` |
+| 28 | `Notes` | `Notes` | `notes` |
+| 29 | `BBDate` | `BBDate` | *(facility `collateral_date`)* |
+
+Seed fields with **no export column**: `agent_advance_rate` (resolved from #9 via
+`agent_rate_map.csv`), and `investor_type` / `region_location` / `funding_ratio`, which stay in the
+CSV header but are written blank — the API reads blank as "not resubmitted" and leaves any stored
+value intact. `high_quality` is not a seed field at all any more.

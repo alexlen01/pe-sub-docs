@@ -402,21 +402,27 @@ paths:
                   investorName:        { type: string }
                   parent:              { type: string, nullable: true }
                   spv:                 { type: boolean }
-                  highQty:             { type: boolean }
-                  investorType:        { type: string, nullable: true }
-                  instVsHnw:           { type: string, nullable: true }
-                  regionLocation:      { type: string, nullable: true }
+                  highQuality:
+                    type: boolean
+                    nullable: true
+                    description: >
+                      Omitted by the feed since the 2026-08-18 LP DB Export dropped the column.
+                      Null/absent means "not supplied" and leaves the stored value alone (a new
+                      record therefore takes the schema default, true) - it is NOT read as false.
+                  investorType:        { type: string, nullable: true, description: "Not supplied by the feed since 2026-08-18; governed outside it" }
+                  institutionalOrHnw:  { type: string, nullable: true }
+                  regionLocation:      { type: string, nullable: true, description: "Not supplied by the feed since 2026-08-18" }
                   investmentGrade:     { type: boolean }
-                  sp:                  { type: string }
-                  mdy:                 { type: string }
-                  fitch:               { type: string }
-                  aum:                 { type: string, nullable: true }
-                  nav:                 { type: string, nullable: true }
-                  pension:             { type: string, nullable: true }
-                  pensionFunded:       { type: string, nullable: true }
-                  ubsClassification:   { type: string, nullable: true }
-                  ubsDefaultAdvRate:   { type: string, nullable: true }
-                  ubsDefaultConcLimit: { type: string, nullable: true }
+                  spRating:            { type: string }
+                  moodysRating:        { type: string }
+                  fitchRating:         { type: string }
+                  aum:                 { type: string, nullable: true, description: "Set when LP Size Criteria is AUM" }
+                  nav:                 { type: string, nullable: true, description: "Set when LP Size Criteria is NAV" }
+                  pensionAssets:       { type: string, nullable: true, description: "Set when LP Size Criteria is Assets" }
+                  fundingRatio:        { type: string, nullable: true, description: "Not supplied by the feed since 2026-08-18" }
+                  ubsLpCategory:       { type: string, nullable: true }
+                  ubsDefaultAdvanceRate:        { type: string, nullable: true }
+                  ubsDefaultConcentrationLimit: { type: string, nullable: true }
                   notes:               { type: string, nullable: true }
       responses:
         '200':
@@ -894,8 +900,10 @@ paths:
         excluded), so every column lands on the `lp_records` insert. Row values are
         authoritative; the LP Master profile (identity, ratings, financial scale) only fills
         fields the row left blank — a legacy 7-field row therefore keeps the old merge
-        behavior. `ubsCls` arrives pre-derived by the extract from the row's UBSAR via the
-        Run-Shadow-BB rate tiers; the API still normalizes agent / UBS classification labels.
+        behavior. `ubsLpCategory` is stated outright by the LP DB Export as of the 2026-08-18
+        format (it used to be derived by the extract); the API still normalizes agent / UBS
+        classification labels. `highQuality` is no longer a feed column - the record inherits the
+        LP Master value instead.
         `lp_records` deliberately has no unique constraint on (facility, investor) — the same
         investor may appear across sleeves — so idempotency is application-level: pairs that
         already have a record are skipped, never overwritten. Rows whose facility or LP Master
@@ -910,37 +918,44 @@ paths:
               items:
                 type: object
                 properties:
-                  facilityName: { type: string }
-                  investorName: { type: string }
-                  capCommit:    { type: string, example: "$250M" }
-                  uncalled:     { type: string, example: "$75M" }
-                  agentCls:     { type: string, example: "Rated Included" }
-                  agentRate:    { type: string, example: "90%" }
-                  agentConc:    { type: string, example: "5%" }
-                  parent:          { type: string, example: "Acme Holdings" }
-                  spv:             { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
-                  highQty:         { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
-                  investorType:    { type: string, example: "Pension Fund" }
-                  instVsHnw:       { type: string, example: "Institutional" }
-                  regionLocation:  { type: string, example: "United States" }
-                  investmentGrade: { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
-                  ubsCls:          { type: string, example: "Rated Investor", description: Pre-derived by the extract from row UBSAR via the rate tiers }
-                  sp:              { type: string, example: "AA" }
-                  mdy:             { type: string, example: "Aa2" }
-                  fitch:           { type: string, example: "AA" }
-                  aum:             { type: string, example: "$10B" }
-                  nav:             { type: string, example: "$8B" }
-                  pension:         { type: string, example: "$9B" }
-                  pensionFunded:   { type: string, example: "105%" }
-                  pctCapCommit:    { type: string, example: "3%" }
-                  calledCap:       { type: string, example: "$175M" }
-                  pctUncalled:     { type: string, example: "2%" }
-                  pctCalled:       { type: string, example: "70%" }
-                  ubsConc:         { type: string, example: "4%" }
-                  ubsRate:         { type: string, example: "90%" }
-                  agentBb:         { type: string, example: "$67.5M" }
-                  ubsBb:           { type: string, example: "$67.5M" }
-                  notes:           { type: string }
+                  facilityName:      { type: string }
+                  investorName:      { type: string }
+                  capitalCommitment: { type: string, example: "$250M" }
+                  uncalledCapital:   { type: string, example: "$75M" }
+                  agentLpCategory:   { type: string, example: "Rated Included" }
+                  agentAdvanceRate:
+                    type: string
+                    example: "90%"
+                    description: >
+                      Resolved by the extract from the row's Agent LP Category (the LP DB Export
+                      stopped carrying an agent rate column), and used as written rather than
+                      floor-mapped.
+                  agentConcentrationLimit: { type: string, example: "5%" }
+                  parent:            { type: string, example: "Acme Holdings" }
+                  spv:               { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
+                  investorType:      { type: string, example: "", description: "Not supplied by the feed since 2026-08-18; inherited from LP Master" }
+                  institutionalOrHnw: { type: string, example: "Institutional" }
+                  regionLocation:    { type: string, example: "", description: "Not supplied by the feed since 2026-08-18; inherited from LP Master" }
+                  investmentGrade:   { type: string, enum: ["TRUE", "FALSE", ""], description: Boolean as feed string; blank falls back to LP Master }
+                  ubsLpCategory:     { type: string, example: "Rated Investor", description: "Stated outright by the export since 2026-08-18; the API still normalizes the label" }
+                  spRating:          { type: string, example: "AA" }
+                  moodysRating:      { type: string, example: "Aa2" }
+                  fitchRating:       { type: string, example: "AA" }
+                  aum:               { type: string, example: "$10B", description: "Set when LP Size Criteria is AUM" }
+                  nav:               { type: string, example: "", description: "Set when LP Size Criteria is NAV" }
+                  pensionAssets:     { type: string, example: "", description: "Set when LP Size Criteria is Assets" }
+                  fundingRatio:      { type: string, example: "", description: "Not supplied by the feed since 2026-08-18" }
+                  pctOfFundCommitments: { type: string, example: "3%" }
+                  calledCapital:     { type: string, example: "$175M" }
+                  pctOfFundUncalled: { type: string, example: "2%" }
+                  pctLpCalled:       { type: string, example: "70%" }
+                  ubsConcentrationLimit: { type: string, example: "4%" }
+                  ubsAdvanceRate:    { type: string, example: "90%" }
+                  agentExcessConcentration: { type: string, example: "$2.5M", description: "Added by the 2026-08-18 export format" }
+                  ubsExcessConcentration:   { type: string, example: "$1.5M", description: "Added by the 2026-08-18 export format" }
+                  agentBorrowingBase: { type: string, example: "$67.5M" }
+                  ubsBorrowingBase:  { type: string, example: "$67.5M" }
+                  notes:             { type: string }
       responses:
         '200':
           description: Seed summary
